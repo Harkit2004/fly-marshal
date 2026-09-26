@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Marshal Fly · Race Control</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=4">
 <script type="importmap">
 { "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -60,18 +60,19 @@
       <ul id="drones"></ul>
     </div>
     <div class="panel">
-      <h2>Fly brain <span class="muted">drone 0 · live neuron firing</span></h2>
+      <h2>Fly brain <span class="muted">drone 0 · FlyWire FAFB v783</span></h2>
       <canvas id="flybrain"></canvas>
       <ul id="fly-legend" class="legend"></ul>
       <div class="bars">
-        <label>forward</label><div class="bar"><i id="b-forward"></i></div>
+        <label title="controller output">forward</label><div class="bar"><i id="b-forward"></i></div>
         <label>turn</label><div class="bar mid"><i id="b-turn"></i></div>
         <label>climb</label><div class="bar mid"><i id="b-climb"></i></div>
       </div>
-      <div class="spikes"><span id="spikes">0</span> neurons firing · <span id="fly-kind" class="muted">placeholder</span></div>
+      <div class="spikes"><span id="spikes">0</span> neurons firing</div>
+      <div id="fly-kind" class="muted fly-kind">loading brain…</div>
     </div>
   </aside>
 </main>
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=4"></script>
 </body>
 </html>

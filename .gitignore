@@ -33,3 +33,7 @@ Thumbs.db
 dashboard/assets/models/*.glb
 dashboard/assets/models/*.gltf
 dashboard/assets/models/*.bin
+
+# FlyWire data and the GPL-3.0 brain mesh: fetched by tools/fetch_flywire.py, not committed
+data/flywire/
+dashboard/assets/flybrain/

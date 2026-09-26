@@ -4,7 +4,8 @@ incident detectors instead of re-implementing them.
 
   vrclog_*.txt  ->  data/sessions/<name>/
                       telemetry.csv    one row per car per 15 Hz tick (shared.schemas.TELEMETRY_COLUMNS)
-                      events.csv       ground-truth incidents: detector episodes + car-to-car contacts
+                      events.csv       ground truth: analyzer episodes (spin/slide/off/stuck/dnf), car-to-car
+                                       contacts, retirements, and rule-based stopped / limping cars
                       centerline.csv   track_pos, x, y, z, typical_speed_kmh
                       meta.json
 
@@ -128,6 +129,29 @@ def events_frame(rd, an) -> pd.DataFrame:
     return df.sort_values("t").reset_index(drop=True)
 
 
+def rule_events(tel: pd.DataFrame, cl: pd.DataFrame, min_stop_s: float = 2.0, min_limp_s: float = 8.0) -> pd.DataFrame:
+    """Hazards the analyzer doesn't call loss of control: a car stopped on track, or limping.
+    Stopped = under 15 km/h, not in the pits, for min_stop_s. Limping = 30-110 km/h while the
+    typical speed there is 80+ km/h higher, for min_limp_s. The first 30 s (grid, launch) is skipped."""
+    bins = len(cl)
+    typ = cl.typical_speed_kmh.to_numpy()
+    rows = []
+    for car, g in tel.groupby("car_id"):
+        g = g.sort_values("t")
+        t = g.t.to_numpy()
+        deficit = typ[np.minimum((g.track_pos.to_numpy() * bins).astype(int), bins - 1)] - g.speed_kmh.to_numpy()
+        racing = (g.in_pit.to_numpy() == 0) & (t > 30)
+        for kind, mask, min_s in [
+            ("stopped", racing & (g.speed_kmh.to_numpy() < 15), min_stop_s),
+            ("limp", racing & (g.speed_kmh.to_numpy() > 30) & (g.speed_kmh.to_numpy() < 110) & (deficit > 80), min_limp_s),
+        ]:
+            edges = np.flatnonzero(np.diff(np.r_[0, mask.astype(int), 0]))
+            for a, b in zip(edges[::2], edges[1::2]):
+                if t[b - 1] - t[a] >= min_s:
+                    rows.append([round(float(t[a]), 3), int(car), kind, -1, round(float(t[b - 1] - t[a]), 1), "rule", -1])
+    return pd.DataFrame(rows, columns=EVENT_COLUMNS)
+
+
 def centerline_frame(tm, df: pd.DataFrame, bins: int = CENTERLINE_BINS) -> pd.DataFrame:
     s = np.arange(bins) / bins
     pts = tm.pts
@@ -153,9 +177,10 @@ def convert(log: Path, name: str | None, ac_root: str | None) -> Path:
 
     tel = telemetry_frame(rd)
     tel.to_csv(out / "telemetry.csv", index=False, float_format="%.4f")
-    ev = events_frame(rd, an)
+    cl = centerline_frame(tm, tel)
+    cl.to_csv(out / "centerline.csv", index=False, float_format="%.4f")
+    ev = pd.concat([events_frame(rd, an), rule_events(tel, cl)], ignore_index=True).sort_values("t")
     ev.to_csv(out / "events.csv", index=False)
-    centerline_frame(tm, tel).to_csv(out / "centerline.csv", index=False, float_format="%.4f")
     meta = {
         "source": "vrc_race_logger", "log": log.name, "app_version": rd.app_version,
         "track": rd.meta.get("trackFull"), "track_length_m": round(tm.total, 1),

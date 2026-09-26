@@ -51,7 +51,7 @@ connect(BRAIN_URL, "conn-brain", (m) => {
     renderSide();
     syncTiles();
     const fly = m.drones.find((d) => d.pilot === "fly");
-    if (fly?.fly_activity?.fired) flyBrain?.fire(fly.fly_activity.fired);
+    if (fly?.fly_activity?.source === "flywire") flyBrain?.fire(fly.fly_activity.fired);
     if (m.events) {
       const ids = m.events.map((e) => e.id + e.kind).join();
       if (ids !== state.eventKey) { state.eventKey = ids; state.events = new Map(m.events.map((e) => [e.id, e])); renderAlerts(); }
@@ -255,26 +255,31 @@ function renderSide() {
       const v = Math.max(-1, Math.min(1, a[k])), el = document.getElementById("b-" + k);
       el.style.left = `${50 + Math.min(0, v) * 50}%`; el.style.width = `${Math.abs(v) * 50}%`;
     }
-    document.getElementById("spikes").textContent = a.spikes.toLocaleString();
-    if (a.regions && flyInfo) {
-      for (const [reg, v] of Object.entries(a.regions)) {
-        const b = document.getElementById("rg-" + reg);
-        if (b) b.textContent = `${Math.round(v * 100)}%`;
-      }
+    const real = a.source === "flywire";
+    document.getElementById("spikes").textContent = real ? a.spikes.toLocaleString() : "0";
+    if (real && a.groups) for (const [g, v] of Object.entries(a.groups)) {
+      const b = document.getElementById("rg-" + g);
+      if (b) b.textContent = `${(v * 100).toFixed(1)}%`;
     }
-    document.getElementById("fly-kind").textContent =
-      a.source === "flywire" ? "FlyWire connectome" : "placeholder brain (connectome data not loaded)";
+    if (flyBrain?.brain) document.getElementById("fly-kind").textContent = real
+      ? "FlyWire v783 connectome · real spikes at real neuron positions"
+      : "connectome not running (placeholder controller): no neural activity shown";
   }
 }
 
 // ---------- fly brain viewer ----------
-let flyInfo = null;
-import("./flybrain3d.js").then(({ FlyBrain3D, REGIONS, REGION_INFO }) => {
-  flyBrain = new FlyBrain3D(document.getElementById("flybrain"));
-  flyInfo = REGION_INFO;
+import("./flybrain3d.js").then(({ FlyBrain3D, GROUP_INFO }) => {
   const legend = document.getElementById("fly-legend");
-  legend.innerHTML = REGIONS.map((r) =>
-    `<li><i style="background:#${REGION_INFO[r].color.toString(16).padStart(6, "0")}"></i>${REGION_INFO[r].label}<b id="rg-${r}">–</b></li>`).join("");
+  const kind = document.getElementById("fly-kind");
+  flyBrain = new FlyBrain3D(document.getElementById("flybrain"), (status) => {
+    if (status === "missing") {
+      kind.textContent = "brain data not built: run python tools/fetch_flywire.py";
+      return;
+    }
+    const n = flyBrain.brain.root_id.length;
+    legend.innerHTML = flyBrain.groups.map((g, k) => flyBrain.groupCount[k] ? `<li><i style="background:#${(GROUP_INFO[g] || GROUP_INFO.other).color.toString(16).padStart(6, "0")}"></i>${(GROUP_INFO[g] || GROUP_INFO.other).label}<b id="rg-${g}">${flyBrain.groupCount[k]}</b></li>` : "").join("");
+    legend.title = `${n.toLocaleString()} real FlyWire neurons at their real positions; counts until activity arrives, then % firing`;
+  });
 });
 
 // ---------- 2D / 3D, cameras, selection ----------

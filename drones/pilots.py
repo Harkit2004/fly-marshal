@@ -21,7 +21,7 @@ import math
 import numpy as np
 
 from drones.sim import Drone
-from shared.config import DRONE_MAX_SPEED, FLY_REGIONS, FLY_SAMPLE_PER_REGION
+from shared.config import DRONE_MAX_SPEED
 
 
 class PIDPilot:
@@ -42,7 +42,8 @@ class PIDPilot:
 
 
 class PlaceholderFlyBrain:
-    """Stands in for the connectome: a noisy, twitchy steering reflex.
+    """Stands in for the connectome until the FlyWire data is downloaded: a noisy steering reflex.
+    It is NOT a brain model and reports no neurons.
 
     Left/right imbalance in optic flow -> turn toward the stronger side,
     vertical flow -> climb, forward flow -> thrust. Deliberately a bit wobbly.
@@ -56,19 +57,9 @@ class PlaceholderFlyBrain:
         turn = np.tanh(3.0 * (left - right)) + self.rng.normal(0, 0.08)
         climb = np.tanh(2.0 * vert) + self.rng.normal(0, 0.05)
         forward = np.clip(fwd * (1.0 - 0.6 * abs(turn)), 0, 1)
-        spikes = int(30000 + 8000 * (abs(turn) + abs(climb) + forward) + self.rng.integers(0, 3000))
-        # population activity per region, loosely following the inputs (it's a placeholder)
-        rates = {
-            "photo_l": 0.1 + 0.5 * left + 0.2 * fwd, "photo_r": 0.1 + 0.5 * right + 0.2 * fwd,
-            "motion_l": 0.05 + 0.4 * max(0.0, turn), "motion_r": 0.05 + 0.4 * max(0.0, -turn),
-            "central": 0.08 + 0.1 * (abs(turn) + forward), "descending": 0.05 + 0.3 * forward + 0.2 * abs(climb),
-        }
-        fired = []
-        for k, r in enumerate(FLY_REGIONS):
-            hit = np.nonzero(self.rng.random(FLY_SAMPLE_PER_REGION) < min(0.9, rates[r]) * 0.35)[0]
-            fired.extend((hit + k * FLY_SAMPLE_PER_REGION).tolist())
-        return {"forward": float(forward), "turn": float(turn), "climb": float(climb), "spikes": spikes,
-                "regions": {r: round(float(v), 3) for r, v in rates.items()}, "fired": fired,
+        # No neuron data: this is a steering reflex standing in for the connectome, so it reports
+        # no neural activity and the dashboard shows the brain dark instead of inventing spikes.
+        return {"forward": float(forward), "turn": float(turn), "climb": float(climb), "spikes": 0,
                 "source": "placeholder"}
 
 

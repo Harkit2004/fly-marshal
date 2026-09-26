@@ -29,7 +29,7 @@ from shared.config import DATA
 HORIZON_S = 5.0
 EVENT_WINDOW_S = 3.0       # an event marks the car as "in incident" for this long
 LABEL_KINDS = {"spin", "slide", "stuck", "off", "off_oversteer", "off_understeer", "contact",
-               "stopped", "rejoin", "dnf"}
+               "stopped", "limp", "rejoin", "dnf"}
 
 
 def add_features(df: pd.DataFrame, cl: pd.DataFrame) -> pd.DataFrame:

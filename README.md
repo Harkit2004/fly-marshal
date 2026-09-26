@@ -112,17 +112,22 @@ python -m pipeline.live_bridge --logs-dir data/live_logs --reference data/sessio
 
 Beating this with the trained models is the ML goal.
 
-## FlyBrain setup
+## FlyBrain setup (real FlyWire data)
 
-The connectome CSVs are not in the flybrain repo. Put `fly_neurons_real.csv` and `fly_synapses_real.csv` (built from FlyWire FAFB v783, see `third_party/flybrain/README.md`) in a folder, then:
+Everything comes from FlyWire's public v783 release. No login is needed.
 
 ```bash
-set FLYBRAIN_DATA=D:\flybrain_data
-set FLYBRAIN_SYNAPSE_STRIDE=4        # optional, if 8 GB VRAM is tight
-python brain.py --steer-assist 0.0   # raise it only if the real fly can't turn toward targets
+python tools/fetch_flywire.py              # ~10 MB: neurons, cell types, sides, coordinates + brain mesh -> 3D viewer works
+python tools/fetch_flywire.py --synapses   # + 2.7 GB per-synapse table -> the connectome can run
+set FLYBRAIN_DATA=datalywire
+set FLYBRAIN_SYNAPSE_STRIDE=2               # optional, if 8 GB VRAM is tight
+python brain.py --steer-assist 0.0          # raise it only if the fly can't turn toward targets
 ```
 
-Without the data, drone 0 uses a placeholder "fly" with the same interface, so everything else still runs.
+- `fly_neurons_real.csv` is ordered left side first. RealFlyBrain splits its photoreceptor and motion pools into halves by index, so with this order its "left/right" becomes anatomical (about 95% exact for R1-6: 4,425 left vs 4,031 right) instead of the arbitrary split its README warns about.
+- The 3D viewer shows 20,073 real FlyWire neurons at their real coordinates inside the FlyWire brain mesh, coloured by FlyWire super_class. A neuron flashes only when that exact neuron (same root id) spiked in the simulation. This is checked for every viewer neuron.
+- Without the synapse table, drone 0 flies with a placeholder steering reflex. The viewer then shows the brain dark and says no neural activity is shown. Nothing is simulated or invented.
+- The FlyWire data and the mesh (navis-flybrains, GPL-3.0) are downloaded, not committed.
 
 ## Coordinates
 
