@@ -28,6 +28,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from shared.settings import get
 from shared.config import CENTERLINE_BINS, DATA, ROOT
 from shared.schemas import EVENT_COLUMNS, TELEMETRY_COLUMNS
 
@@ -204,7 +205,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("log", type=Path, help="vrclog_*.txt (or a .parts dir)")
     ap.add_argument("--name", help="session folder name (default: from the log filename)")
-    ap.add_argument("--ac-root", default=os.environ.get("AC_ROOT"), help="AC install, for fast_lane.ai")
+    ap.add_argument("--ac-root", default=os.environ.get("AC_ROOT") or get("live.ac_root"),
+                    help="AC install, for fast_lane.ai (settings.toml live.ac_root)")
     args = ap.parse_args()
     convert(args.log, args.name, args.ac_root)
 

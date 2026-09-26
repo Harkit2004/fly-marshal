@@ -12,6 +12,23 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_dotenv(path: Path = ROOT / ".env") -> None:
+    """KEY=value lines from .env into the environment (real env vars win). See .env.example."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        v = v.split(" #")[0].strip().strip('"').strip("'")
+        if v:
+            os.environ.setdefault(k.strip(), v)
+
+
+_load_dotenv()
 PATH = Path(os.environ.get("MARSHAL_SETTINGS", ROOT / "settings.toml"))
 
 DEFAULTS = {
@@ -23,8 +40,8 @@ DEFAULTS = {
                "track_clearance_m": 12.0, "standoff_m": 18.0, "hold_alt_m": 22.0,
                "escort_back_m": 25.0, "versus": True, "versus_stack_m": 14.0},
     "flybrain": {"data_dir": "data/flywire", "model": "corrected", "synapse_stride": 0, "steer_assist": 0.0},
-    "vision": {"enabled": False, "provider": "anthropic", "model": "claude-sonnet-5",
-               "api_key_env": "ANTHROPIC_API_KEY", "cache_dir": "cv/cache", "timeout_s": 8.0},
+    "vision": {"enabled": False, "provider": "openai", "model": "gpt-6-luna",
+               "api_key_env": "OPENAI_API_KEY", "cache_dir": "cv/cache", "timeout_s": 8.0},
     "scene": {},          # dashboard has its own defaults
     "models": {},
     "tracks": {},

@@ -4,7 +4,8 @@
 # Python reads this file directly (shared/settings.py). The dashboard gets the [scene],
 # [models] and [tracks] parts inside the "track" message from the replay / live bridge,
 # so restart the bridge after editing those, then refresh the page.
-# Environment variables still win where noted (handy for one-off runs).
+# Environment variables still win where noted (handy for one-off runs). Secrets (API keys)
+# never go here: copy .env.example to .env and fill them in there.
 
 # ─────────────────────────────────────────────────────────────────────────────
 [live]
@@ -79,9 +80,9 @@ steer_assist = 0.0
 # car blocking the racing line, marshals on track. Until it runs, the dashboard
 # shows those fields as "?" rather than guessing.
 enabled = false
-provider = "anthropic"                    # "anthropic" | "openai" | "ollama" (local)
-model = "claude-sonnet-5"                 # any image-capable model of that provider
-api_key_env = "ANTHROPIC_API_KEY"         # name of the env var holding the key (never put the key here)
+provider = "openai"                       # "openai" | "anthropic" | "ollama" (local)
+model = "gpt-6-luna"                      # any image-capable model of that provider; small + fast is best here
+api_key_env = "OPENAI_API_KEY"            # name of the env var holding the key (put the key in .env, never here)
 cache_dir = "cv/cache"                    # answers are cached per incident so demos never need the network
 timeout_s = 8.0
 
