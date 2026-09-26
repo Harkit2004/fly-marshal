@@ -262,7 +262,7 @@ function renderSide() {
       if (b) b.textContent = `${(v * 100).toFixed(1)}%`;
     }
     if (flyBrain?.brain) document.getElementById("fly-kind").textContent = real
-      ? "FlyWire v783 connectome · real spikes at real neuron positions"
+      ? `FlyWire v783 connectome · real spikes at real neuron positions${a.brain_hz ? ` · brain steps at ${a.brain_hz} Hz` : ""}`
       : "connectome not running (placeholder controller): no neural activity shown";
   }
 }

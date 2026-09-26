@@ -17,6 +17,8 @@ and say so in the pitch ("the fly flies, we nudge its heading").
 from __future__ import annotations
 
 import math
+import threading
+import time
 
 import numpy as np
 
@@ -64,15 +66,34 @@ class PlaceholderFlyBrain:
 
 
 class FlyBrainPilot:
-    FLY_HZ = 15.0
+    FLY_HZ = 15.0          # placeholder step rate; the real connectome runs as fast as its thread manages
     TURN_RATE = 2.2        # rad/s at full turn
     CLIMB_SPEED = 6.0      # m/s at full climb
 
     def __init__(self, brain=None, steer_assist: float = 0.0):
+        self.threaded = brain is not None          # the real connectome can take 0.1-5 s per step
         self.brain = brain or PlaceholderFlyBrain()
         self.steer_assist = steer_assist
         self.out = {"forward": 0.0, "turn": 0.0, "climb": 0.0, "spikes": 0}
         self.acc = 0.0
+        if self.threaded:
+            # Run the brain on its own thread so a slow step never stalls telemetry, detection or
+            # the other drones. The pilot always flies on the brain's most recent output.
+            self._flow = None
+            self._wake = threading.Event()
+            self._step_s = 0.0
+            threading.Thread(target=self._loop, daemon=True, name="flybrain").start()
+
+    def _loop(self):
+        while True:
+            self._wake.wait()
+            self._wake.clear()
+            flow = self._flow
+            t0 = time.perf_counter()
+            out = self.brain.step(flow)
+            self._step_s = time.perf_counter() - t0
+            out["brain_hz"] = round(1.0 / max(self._step_s, 1e-3), 2)
+            self.out = out
 
     @staticmethod
     def beacon_flow(d: Drone, target: np.ndarray) -> list[float]:
@@ -88,10 +109,14 @@ class FlyBrainPilot:
         return [forward, min(left, 1.0), min(right, 1.0), max(-1.0, min(1.0, elev * 2))]
 
     def command(self, d: Drone, target: np.ndarray, dt: float) -> np.ndarray:
-        self.acc += dt
-        if self.acc >= 1.0 / self.FLY_HZ:
-            self.acc = 0.0
-            self.out = self.brain.step(self.beacon_flow(d, target))
+        if self.threaded:
+            self._flow = self.beacon_flow(d, target)      # newest input for the brain's next step
+            self._wake.set()
+        else:
+            self.acc += dt
+            if self.acc >= 1.0 / self.FLY_HZ:
+                self.acc = 0.0
+                self.out = self.brain.step(self.beacon_flow(d, target))
         o = self.out
         turn = o["turn"]
         if self.steer_assist > 0:
@@ -101,6 +126,6 @@ class FlyBrainPilot:
         d.yaw += turn * self.TURN_RATE * dt
         dist = float(np.linalg.norm(target - d.pos))
         speed = o["forward"] * DRONE_MAX_SPEED * min(1.0, dist / 40.0)
-        d.activity = {k: round(v, 3) if isinstance(v, float) else v for k, v in o.items()}
+        d.activity = {k: round(v, 3) if isinstance(v, float) else v for k, v in dict(o).items()}
         d.activity["turn_cmd"] = round(turn, 3)
         return np.array([math.cos(d.yaw) * speed, o["climb"] * self.CLIMB_SPEED, math.sin(d.yaw) * speed])
