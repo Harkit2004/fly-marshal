@@ -14,12 +14,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import time
 
 import numpy as np
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import broadcast, serve
 
 from cv.report import telemetry_report
+from cv.worker import VisionWorker
+from drones.game_feeds import GameFeeds
 from drones.dispatcher import Dispatcher
 from drones.flybrain_real import RealFlyBrainAdapter
 from drones.pilots import FlyBrainPilot, PIDPilot
@@ -67,6 +70,11 @@ class Brain:
         if f.get("wheels_out", 0) >= 3 or f["off_line_m"] > 15:
             return "off-track"
         return "anomaly"
+
+    def close(self):
+        for pilot in self.pilots.values():
+            if isinstance(pilot, FlyBrainPilot):
+                pilot.close()
 
     def new_event(self, t, typ, kind, car, c, severity, eta=0.0) -> dict:
         ev = RiskEvent(id=f"{typ[:3]}-{car}-{int(t)}", t=t, type=typ, kind=kind, car_ids=[car],
@@ -163,29 +171,81 @@ async def main():
                     help="0-1, blend beacon bearing into the fly's turn (settings.toml flybrain.steer_assist)")
     args = ap.parse_args()
     fly_brain = RealFlyBrainAdapter.load()     # None -> placeholder fly
+    feeds = GameFeeds()
+    vision = VisionWorker()
 
     async def handler(ws):
         await ws.wait_closed()
 
     async with serve(handler, "localhost", BRAIN_WS_PORT) as server:
         print(f"brain publishing on ws://localhost:{BRAIN_WS_PORT}")
+        brain, session_id = None, None
+
+        def emit(raw):
+            payload = json.loads(raw)
+            payload["session_id"] = session_id
+            broadcast(server.connections, json.dumps(payload))
+
         while True:
             try:
                 async with connect(f"ws://localhost:{TELEMETRY_WS_PORT}", max_size=None) as tel:
                     print("connected to telemetry")
                     brain = None
-                    async for raw in tel:
-                        m = json.loads(raw)
-                        if m["type"] == "track":
+                    cars, source_live, last_telemetry = [], False, 0.0
+                    while True:
+                        # Keep camera capture alive between logger flushes. recv cancellation
+                        # is safe in websockets; a timeout does not discard the next message.
+                        try:
+                            raw = await asyncio.wait_for(tel.recv(), timeout=0.1)
+                            m = json.loads(raw)
+                        except asyncio.TimeoutError:
+                            m = {}
+                        if m.get("type") in ("session_reset", "track"):
+                            session_id = m.get("session_id")
+                            feeds.reset(False)
+                            vision.reset()
+                            cars, last_telemetry = [], 0.0
+                            emit(json.dumps({"type": "game_frames_reset"}))
+                            if brain:
+                                await asyncio.to_thread(brain.close)
+                                brain = None
+                        if m.get("type") == "track":
+                            source_live = m.get("source") == "live"
+                            cars, last_telemetry = [], 0.0
+                            feeds.reset(source_live)
+                            vision.reset()
                             brain = Brain(Track(m["centerline"]), versus=not args.no_versus,
                                           fly_brain=fly_brain, steer_assist=args.steer_assist)
                             print(f"track loaded: {brain.track.length:.0f} m")
-                        elif m["type"] == "frames" and brain:
+                        elif m.get("type") == "frames" and brain:
+                            cars, last_telemetry = m["cars"], time.monotonic()
+                            if source_live and not feeds.live:
+                                feeds.reset(True)
                             for out in brain.tick(m["t"], m["cars"]):
                                 if '"risk' in out[:20] or '"report' in out[:20]:
                                     print(out[:160])
-                                broadcast(server.connections, out)
+                                emit(out)
+                        if brain and last_telemetry:
+                            age = time.monotonic() - last_telemetry
+                            if age > 15 and feeds.live:
+                                feeds.reset(False)
+                                vision.reset()
+                                emit(json.dumps({"type": "game_frames_reset"}))
+                            # Default logger flushes every 10s. Frames remain genuinely live
+                            # during that interval, but drone movement follows buffered data.
+                            feeds.publish_poses(brain, cars)
+                            frame_msg = feeds.poll_message([d.id for d in brain.drones])
+                            if frame_msg:
+                                emit(frame_msg)
+                            if age < 2:
+                                vision.poll(brain, feeds, emit)
             except (OSError, Exception) as e:  # telemetry not up yet, or stream ended
+                feeds.reset(False)
+                vision.reset()
+                emit(json.dumps({"type": "game_frames_reset"}))
+                if brain:
+                    await asyncio.to_thread(brain.close)
+                    brain = None
                 print(f"waiting for telemetry ({type(e).__name__})")
                 await asyncio.sleep(2)
 

@@ -105,7 +105,7 @@ python -m pipeline.live_bridge --logs-dir data/live_logs                  # lear
 | `pipeline/live_bridge.py` | Teammate | Streams the race running in AC right now, from the logger's chunk files |
 | `pipeline/track_source.py` | Teammate | Live track shape from the AI line or the first lap |
 | `tools/simulate_live_logger.py` | Teammate | Fakes the logger mid-race from an old log, for testing live mode |
-| `cv/report.py` | Teammate | Incident reports. Telemetry version works; vision-model version is a TODO (`settings.toml [vision]`) |
+| `cv/report.py`, `cv/worker.py` | Teammate | Telemetry reports and asynchronous OpenAI vision on fresh AC game frames |
 | `dashboard/` | Teammate | 2D map, 3D view (cameras, drone feeds, sponsor boards), fly-brain viewer, custom model hooks |
 | `ml/features.py`, `ml/detectors.py` | You | Online features; anomaly detector and risk predictor (rule baselines, swap in trained models) |
 | `drones/` | You | Sim, PID and FlyBrain pilots, safety layer, dispatcher |
@@ -163,6 +163,88 @@ Takeaway: the real brain runs and its spikes are real, but connectome-only steer
 **What runs now (default `FLYBRAIN_MODEL=corrected`):** `CorrectedLIF` in `drones/flybrain_real.py` uses the same connectome and neuron pools with τm = 20 ms. Measured: target left → turn +0.50, right → −0.50, ahead → 0.00. About 850 spikes/ms instead of ~44,000. Heading is read from the simulated photoreceptors' left/right firing. Descending neurons stay silent with this input, so forward speed and altitude are flown by plain beacon control, and the dashboard labels them "assisted". `FLYBRAIN_MODEL=upstream` runs the original for comparison.
 
 Pitch line: "A real FlyWire fly brain runs live and sees which side the incident is on; the drone's heading follows its photoreceptors, speed and altitude are assisted."
+
+## Game-rendered drone feeds (issue #1)
+
+Implementation/verification checklist: [ISSUE_1_CHECKLIST.md](ISSUE_1_CHECKLIST.md).
+These are **simulated drone cameras rendered inside Assetto Corsa**, not physical drone feeds.
+The Three.js scene remains the overview and replay fallback. Its images are never sent to vision.
+
+1. Install dependencies: `python -m pip install -r requirements.txt`.
+2. Set `AC_ROOT` in your local `.env` (for example `AC_ROOT=B:/SteamLibrary/steamapps/common/assettocorsa`).
+3. Run `python tools/install_game_cams.py`. This installs only the new app, backing up changed app files.
+4. Restart the AC session and open **Marshal Drone Cams** in the Lua apps taskbar. Enable the VRC logger and start a race.
+5. Run `python tools/run_demo.py --live --game-feeds`, then open <http://localhost:8000>.
+   Alternatively set `game_feeds.enabled = true` and use the original three-terminal commands.
+   `--game-feeds` enables captures for that launch without editing the shared settings.
+6. Fresh tiles say **GAME**. After two seconds without a fresh capture, they revert to **3D**.
+   Replay and `live_bridge --logs-dir ...` simulations always use 3D, even if AC is open.
+
+The bridge atomically publishes `<AC>/logs/marshal_poses.json` at up to 10 Hz. The app polls it and
+stagger-renders three 640×360 cameras at a target of four frames/sec each. `pose_port` is reserved;
+this implementation deliberately uses the issue's permitted JSON-file transport, not UDP.
+Each capture has a run/event identifier and an immutable JPEG filename referenced by its metadata.
+`drone_<id>.jpg` also contains the latest complete JPEG. Old sessions and partial/stale files are rejected.
+During an incident the app aims at the current in-game car position, compensating for logger buffering.
+Camera capture continues between logger flushes; drone movement still follows buffered telemetry.
+After 15 seconds without telemetry the brain stops camera requests. Use the logger's recommended
+one-second flush interval for a responsive live demo. Exported images use CSP's main shaders and
+YEBIS tone mapping so scene lighting is converted correctly to JPEG.
+
+**Rendering check required:** CSP [issue #629](https://github.com/ac-custom-shaders-patch/acc-extension-config/issues/629)
+reports missing distant car bodies in GeometryShot. Inspect the incident car yourself; a fresh JPEG does not prove
+that all geometry rendered. Smoke/particles may also differ from the main view. If needed, set
+`game_feeds.method = "main_camera"` and `selected_drone` in settings, restart the brain, and check
+**Allow main-camera takeover** in the app. This captures one drone using AC's actual screen resolution,
+including HUD; it takes over your view and is intended for spectating. Other tiles fall back to 3D.
+Disable the checkbox to release the camera. Lost/stale poses also release it automatically.
+
+**Vision:** Put `OPENAI_API_KEY=...` in `.env` locally (never in git or a chat), set `vision.enabled = true`,
+and restart the brain. This implementation supports `provider = "openai"`; other providers fail closed.
+The default [GPT-6 Luna model](https://developers.openai.com/api/docs/models/gpt-6-luna) supports image input
+and structured outputs. Requests use the [Responses image-input format](https://developers.openai.com/api/docs/guides/images-vision).
+One fresh game frame is assessed when a drone is within 8 m of its assigned incident station.
+A single image generally cannot establish motion: uncertain fields stay null/`?`, including stopped.
+Driver injuries are not inferred. The API call is bounded by `vision.timeout_s`; failures leave the
+telemetry report in place and cannot block the control loop. Only one request can be in flight.
+Results are cached by event with image hash, capture run and model, preventing cross-race cache reuse.
+API usage incurs the configured provider's charges.
+
+**Live acceptance:** Record the app's FPS with capture paused for 30 seconds, then enabled for 30 seconds,
+using the same race/camera/settings. Confirm all three tiles, distant incident-car visibility and report
+updates. `<frames_dir>/status.json` records current game FPS and last capture duration; no performance
+claim has been verified until this comparison is performed. Changing weather/traffic can affect FPS.
+
+**Replay acceptance:** Close AC, run `python tools/make_synthetic.py`, then
+`python tools/run_demo.py`. All feeds should say 3D, and debris/smoke/driver-out/blocking remain `?`.
+Component logs are in `data/runtime/`; Ctrl+C stops the combined launcher and its children.
+
+**Changing tracks/cars:** Keep the launcher running. The bridge watches the logger's active-session
+pointer and clears the old cars, alerts, reports, drone state and camera frames when it changes.
+It reads the new track's AI line from the first telemetry sample, including stationary cars.
+Deleted/finalized part files and temporarily empty pointers are retried automatically.
+The first data still depends on the logger flush interval (default 10 seconds; use 1 for live demos)
+and configured playback delay. Tracks without an AI line need first-lap coverage before their map appears.
+An explicit reference session is used only when its track ID matches the current track.
+
+**Performance settings:** The corrected fly model uses CSR connectivity and avoids boolean-index
+GPU synchronization. Neuron count, connections and 20 simulation substeps are unchanged.
+`flybrain.max_hz = 15` caps controller work and keeps only the latest requested input.
+Incident cameras retain `game_feeds.fps = 4` at 640×360; quiet patrol cameras use
+`game_feeds.patrol_fps = 2`. Thus three patrol cameras request six captures/second instead of twelve.
+JPEG generations are cached while fresh; age/session checks still run on every read.
+`scene.dashboard_fps = 30` caps browser rendering (set 60 for a smoother display at higher GPU cost).
+Sidebar changes are batched at 10 Hz; hidden pages skip drawing. Detection and telemetry rates are unchanged.
+
+To reproduce the neural performance/equivalence check, stop the launcher and run
+`python tools/benchmark_flybrain.py`, then restart normally. This laptop measured 23.1 → 14.3 ms
+per neural compute step (1.61×), with equal motor/spike outputs across the benchmark inputs.
+This is a compute benchmark, not a measured increase in AC game FPS; its report is saved in
+`data/runtime/fly-performance.json`. Live FPS depends on race, camera and graphics settings.
+
+**Automated checks:** `python -m unittest discover -s tests -v` tests transport provenance, staleness,
+replay isolation, pose targeting, strict report parsing, caching and a nonblocking timeout using a mock API.
+These checks require no API key and do not establish GPU performance or live rendering quality.
 
 ## Coordinates
 

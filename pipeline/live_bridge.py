@@ -30,6 +30,7 @@ import asyncio
 import json
 import os
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 
@@ -63,17 +64,25 @@ class LogTail:
 
     def find_session(self) -> bool:
         ptr = self.logs_dir / "_active_recording.txt"
-        if not ptr.exists():
+        try:
+            lines = ptr.read_text(encoding="utf-8-sig").splitlines()
+            if not lines or not lines[0].strip():
+                return False  # pointer may be between truncate and write
+            parts = Path(lines[0].strip())
+            if not parts.is_dir():
+                parts = None
+        except FileNotFoundError:
+            parts = None
+        except OSError:
             return False
-        parts = Path(ptr.read_text(encoding="utf-8").splitlines()[0].strip())
         if parts != self.parts_dir:
-            print(f"[live] following {parts.name}")
+            print(f"[live] following {parts.name}" if parts else "[live] waiting for a new recording")
             self.parts_dir, self.next_part = parts, 1
             self.drivers, self.slow, self.pending = {}, {}, {}
             self.frames.clear()
             self.meta = {}
             self.session += 1            # main loop rebuilds the track for the new session
-        return parts.exists()
+        return parts is not None
 
     def poll(self) -> int:
         """Read any new complete part files. Returns number of new frames."""
@@ -83,14 +92,20 @@ class LogTail:
         while True:
             path = self.parts_dir / f"part_{self.next_part:06d}.txt"
             nxt = self.parts_dir / f"part_{self.next_part + 1:06d}.txt"
-            if not path.exists():
-                break
             # a part is written in one go (io.saveAsync); wait until its size is stable
-            size = path.stat().st_size
-            time.sleep(0.05)
-            if path.stat().st_size != size and not nxt.exists():
+            try:
+                size = path.stat().st_size
+                time.sleep(0.05)
+                if path.stat().st_size != size and not nxt.exists():
+                    break
+                content = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                # Session finalization can remove the entire .parts directory
+                # between any two reads. Recheck the active pointer next poll.
                 break
-            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if content and not content.endswith("\n"):
+                break  # do not consume a partially written last record
+            for line in content.splitlines():
                 self.handle(line)
             self.next_part += 1
         return len(self.frames) - before
@@ -132,7 +147,8 @@ class TrackBuilder:
 
     def __init__(self, reference: Path | None, ac_root: str | None, source: str):
         self.ac_root, self.source = ac_root, source
-        self.msg = track_message(reference) if reference else None
+        self.reference_msg = track_message(reference) if reference else None
+        self.msg = None
         self.first_lap = track_source.FirstLap()
         self.samples: list = []
         self.said = None
@@ -149,12 +165,17 @@ class TrackBuilder:
         track_full = tail.meta.get("trackFull", "")
         if not track_full:
             return None
+        if self.reference_msg:
+            if json.loads(self.reference_msg).get("track_id") == track_full:
+                self.msg = self.reference_msg
+                return self.msg
+            self.reference_msg = None  # never reuse a reference from another track
         for c in cars:
             self.first_lap.add(c)
-            if len(self.samples) < 200 and c["speed_kmh"] > 30:
+            if len(self.samples) < 200:
                 self.samples.append((c["track_pos"], c["x"], c["z"]))
         ai = track_source.ai_line_path(track_full, self.ac_root) if self.source != "first_lap" else None
-        if ai and len(self.samples) >= 30:
+        if ai and self.samples:
             self.msg = track_source.from_ai_line(ai, track_full, self.samples)
             self.say(f"track from AI line: {ai}")
             return self.msg
@@ -186,10 +207,21 @@ async def main():
 
     tail = LogTail(logs)
     track = TrackBuilder(args.reference, args.ac_root, args.track_source)
+    bridge_id = uuid.uuid4().hex
+
+    def session_message():
+        return json.dumps({"type": "session_reset", "session_id": f"{bridge_id}-{tail.session}"})
+
+    def live_track(raw):
+        m = json.loads(raw)
+        m["source"] = "live" if args.logs_dir is None else "simulation"
+        m["session_id"] = f"{bridge_id}-{tail.session}"
+        return json.dumps(m)
 
     async def handler(ws):
+        await ws.send(session_message())
         if track.msg:
-            await ws.send(track.msg)
+            await ws.send(live_track(track.msg))
         await ws.wait_closed()
 
     async with serve(handler, "localhost", args.port) as server:
@@ -199,14 +231,15 @@ async def main():
         clock0 = None                      # (session_t, wall) anchor for smooth playout
         session = 0
         while True:
-            if not tail.find_session():
-                await asyncio.sleep(1.0)
-                continue
+            available = tail.find_session()
             if tail.session != session:    # new AC session (maybe a different track): start over
-                if session:
-                    print("[live] new session: rebuilding the track")
-                    track = TrackBuilder(args.reference, args.ac_root, args.track_source)
+                print("[live] session changed: clearing race data and rebuilding the track")
+                track = TrackBuilder(args.reference, args.ac_root, args.track_source)
                 session, clock0 = tail.session, None
+                broadcast(server.connections, session_message())
+            if not available:
+                await asyncio.sleep(0.1)
+                continue
             if tail.poll() and clock0 is None and tail.frames:
                 newest = tail.frames[-1][0]
                 clock0 = (newest - args.delay, time.perf_counter())
@@ -219,7 +252,7 @@ async def main():
                     t, cars = tail.frames.popleft()
                     new_track = track.feed(tail, cars)
                     if new_track:
-                        broadcast(server.connections, new_track)
+                        broadcast(server.connections, live_track(new_track))
                     if track.msg:          # brain + dashboard need the track before frames mean anything
                         broadcast(server.connections, json.dumps({"type": "frames", "t": t, "cars": cars}))
             await asyncio.sleep(1 / 60)

@@ -123,7 +123,7 @@ export class FlyBrain3D {
     for (const j of indices || []) if (j >= 0 && j < this.glow.length) this.glow[j] = 1;
   }
 
-  update() {
+  update(dt = 1 / 60) {
     if (this.colors) {
       const a = this.colors.array;
       let dirty = false;
@@ -134,7 +134,7 @@ export class FlyBrain3D {
         a[3 * j] = this.base[3 * j] + (c.r + 0.5) * g;
         a[3 * j + 1] = this.base[3 * j + 1] + (c.g + 0.5) * g;
         a[3 * j + 2] = this.base[3 * j + 2] + (c.b + 0.5) * g;
-        this.glow[j] = g < 0.02 ? 0 : g * 0.85;
+        this.glow[j] = g < 0.02 ? 0 : g * Math.pow(0.85, dt * 60);
         if (this.glow[j] === 0) { a[3 * j] = this.base[3 * j]; a[3 * j + 1] = this.base[3 * j + 1]; a[3 * j + 2] = this.base[3 * j + 2]; }
         dirty = true;
       }

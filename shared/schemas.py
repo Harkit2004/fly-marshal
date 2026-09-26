@@ -106,13 +106,16 @@ class DroneState:
 @dataclass
 class IncidentReport:
     event_id: str
-    stopped: bool
-    on_racing_line: bool
+    stopped: Optional[bool]
+    on_racing_line: Optional[bool]
     debris: Optional[bool]          # None = unknown (only a camera / vision model can tell)
     smoke: Optional[bool]
     cars_approaching_s: Optional[float]
     summary: str
     frame_path: Optional[str] = None
+    driver_out: Optional[bool] = None
+    blocking: Optional[bool] = None
+    source: str = "telemetry"
 
 
 def message(kind: str, **payload) -> str:

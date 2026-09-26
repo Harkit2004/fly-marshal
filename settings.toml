@@ -72,6 +72,7 @@ synapse_stride = 0                        # env FLYBRAIN_SYNAPSE_STRIDE override
 
 # 0-1: blend the direct bearing-to-target into the fly's turn. 0 = pure fly brain.
 steer_assist = 0.0
+max_hz = 15.0                            # cap neural work so AC can share the GPU
 
 # ─────────────────────────────────────────────────────────────────────────────
 [vision]
@@ -86,8 +87,21 @@ api_key_env = "OPENAI_API_KEY"            # name of the env var holding the key 
 cache_dir = "cv/cache"                    # answers are cached per incident so demos never need the network
 timeout_s = 8.0
 
+# Game-rendered camera feeds. Off by default; replay always uses the 3D fallback.
+[game_feeds]
+enabled = false
+method = "geometry_shot"    # all drones off-screen; "main_camera" captures one AC screen
+width = 640                 # off-screen image width; main_camera uses the game's resolution
+height = 360                # off-screen image height
+fps = 4                     # target frames per second per drone (1–10)
+patrol_fps = 2               # quiet patrol cameras; incident cameras retain fps above
+frames_dir = ""             # empty = <ac_root>/logs/marshal_cams
+pose_port = 9777            # reserved for future UDP; this version polls logs/marshal_poses.json
+selected_drone = 0          # main_camera drone; also enable takeover in the in-game app
+
 # ─────────────────────────────────────────────────────────────────────────────
 [scene]
+dashboard_fps = 30          # browser render cap; telemetry/control rates unchanged
 # 3D dashboard look. Sizes in metres.
 board_gap_m = 4.0          # gap between the track edge and the sponsor barrier
 board_height_m = 1.2
@@ -109,9 +123,9 @@ rotation_y = 0.0           # radians; the car must face +X
 y_offset = 0.0
 
 [models.drone]
-file = ""                  # e.g. "quad.glb"
-scale = 1.0
-rotation_y = 0.0
+file = "dji_fpv_combo.glb"
+scale = 6.0                # match the previous display drone's ~2 m span before scene scaling
+rotation_y = 1.57079632679 # downloaded model faces +Z; flight direction is +X
 rotor_nodes = "rotor|prop" # nodes whose name matches this spin
 
 # Custom track models, keyed by the AC track id ("<track>/<layout>", as the logger reports it).
