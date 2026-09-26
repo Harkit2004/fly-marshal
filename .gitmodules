@@ -1,0 +1,6 @@
+[submodule "third_party/assetto-corsa-race-logger"]
+	path = third_party/assetto-corsa-race-logger
+	url = https://github.com/Zhaoyi-Fan/assetto-corsa-race-logger.git
+[submodule "third_party/flybrain"]
+	path = third_party/flybrain
+	url = https://github.com/dylankainth/flybrain.git

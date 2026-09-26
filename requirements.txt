@@ -1,0 +1,18 @@
+# Core pipeline (replay streamer, brain, processing)
+numpy>=1.26
+pandas>=2.1
+websockets>=13
+pyarrow>=15
+
+# ML
+scikit-learn>=1.4
+lightgbm>=4.3
+matplotlib>=3.8
+
+# FlyBrain needs PyTorch with CUDA. Install it separately to match your CUDA version:
+#   https://pytorch.org/get-started/locally/
+# Use Python 3.11 or 3.12 for the FlyBrain venv if torch has no wheel for your Python yet.
+
+# Optional
+# fastf1>=3.4       # real F1 telemetry and race control messages
+# anthropic         # vision reports in cv/report.py

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marshal Fly · Race Control</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">🪰</span> Marshal Fly <span class="sub">race control</span></div>
+  <div class="views">
+    <button id="btn-2d" class="on">2D map</button>
+    <button id="btn-3d">3D view</button>
+    <span class="sep"></span>
+    <button id="cam-orbit" class="cam">Orbit</button>
+    <button id="cam-fly" class="cam">Follow fly drone</button>
+    <button id="cam-incident" class="cam">Incident cam</button>
+  </div>
+  <div class="conn"><span id="conn-tel" class="dot"></span>telemetry <span id="conn-brain" class="dot"></span>brain <span id="clock">t = 0.0 s</span></div>
+</header>
+<main>
+  <section id="stage">
+    <canvas id="map2d"></canvas>
+    <div id="view3d" hidden></div>
+  </section>
+  <aside>
+    <div class="panel">
+      <h2>Alerts</h2>
+      <ul id="alerts"><li class="empty">No active events</li></ul>
+    </div>
+    <div class="panel">
+      <h2>Incident report</h2>
+      <div id="report" class="empty">Waiting for an incident…</div>
+    </div>
+    <div class="panel">
+      <h2>Drones</h2>
+      <ul id="drones"></ul>
+    </div>
+    <div class="panel">
+      <h2>Fly brain <span class="muted">drone 0 · connectome output</span></h2>
+      <div class="bars">
+        <label>forward</label><div class="bar"><i id="b-forward"></i></div>
+        <label>turn</label><div class="bar mid"><i id="b-turn"></i></div>
+        <label>climb</label><div class="bar mid"><i id="b-climb"></i></div>
+      </div>
+      <div class="spikes"><span id="spikes">0</span> neurons firing</div>
+    </div>
+  </aside>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Data: shared via drive, not git (folders are kept with .gitkeep)
+data/raw/*
+data/processed/*
+data/sessions/*
+data/frames/*
+!data/**/.gitkeep
+*.acreplay
+*.parquet
+
+# Models and caches
+models/
+cv/cache/
+
+
+# Editors / OS / local tooling
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env

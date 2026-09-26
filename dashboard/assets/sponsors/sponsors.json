@@ -1,0 +1,6 @@
+[
+  { "name": "Formula Hacks", "bg": "#101010", "fg": "#ffffff" },
+  { "name": "Sponsor One",   "bg": "#ffffff", "fg": "#d7263d" },
+  { "name": "Sponsor Two",   "bg": "#1b998b", "fg": "#ffffff" },
+  { "name": "Sponsor Three", "bg": "#f4a259", "fg": "#101010" }
+]
