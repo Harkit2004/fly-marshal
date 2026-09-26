@@ -1,0 +1,25 @@
+    t  car           kind  detected  latency_s warned_s_before  pid_arrival_s  fly_arrival_s
+ 20.9    7        contact     False        NaN            None            NaN            NaN
+ 20.9    5        contact     False        NaN            None            NaN            NaN
+ 21.7    5        contact     False        NaN            None            NaN            NaN
+ 21.7    6        contact     False        NaN            None            NaN            NaN
+ 22.4    7        contact     False        NaN            None            NaN            NaN
+ 26.9   19        contact     False        NaN            None            NaN            NaN
+ 26.9    0        contact     False        NaN            None            NaN            NaN
+ 27.9   17        contact     False        NaN            None            NaN            NaN
+ 28.5   17        contact     False        NaN            None            NaN            NaN
+ 44.4    0 off_understeer      True       0.34            None            NaN            NaN
+ 61.8   14        contact     False        NaN            None            NaN            NaN
+ 62.9    9           spin     False        NaN            None            NaN            NaN
+ 64.5   16        contact     False        NaN            None            NaN            NaN
+ 64.5    0        contact     False        NaN            None            NaN            NaN
+ 77.6    0            off      True       0.36            None            NaN            NaN
+197.6   18 off_understeer      True       0.30            None            NaN            NaN
+200.8   23 off_understeer      True       0.31            None            NaN            NaN
+207.3   11        contact     False        NaN            None            NaN            NaN
+208.1    8          slide     False        NaN            None            NaN            NaN
+
+ground-truth incidents: 19   detected: 4 (21%)
+median detection latency: 0.33 s   warned in advance: 0
+false alarms: 7 (1.2 per minute)   predicted warnings raised: 0
+by kind: contact 0/13   off 4/4   slide 0/1   spin 0/1

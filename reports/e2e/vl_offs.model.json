@@ -1,0 +1,31 @@
+{
+  "session": "vl_offs",
+  "mode": "model",
+  "incidents": 12,
+  "detected": 11,
+  "median_latency_s": 0.35,
+  "warned": 0,
+  "median_warning_s": null,
+  "false_alarms": 0,
+  "minutes": 7.97,
+  "predicted_warnings": 1,
+  "predicted_followed_by_incident": 0,
+  "by_kind": {
+    "contact": [
+      1,
+      2
+    ],
+    "off": [
+      7,
+      7
+    ],
+    "slide": [
+      1,
+      1
+    ],
+    "spin": [
+      2,
+      2
+    ]
+  }
+}

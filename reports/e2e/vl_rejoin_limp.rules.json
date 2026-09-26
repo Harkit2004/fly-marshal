@@ -1,0 +1,35 @@
+{
+  "session": "vl_rejoin_limp",
+  "mode": "rules",
+  "incidents": 32,
+  "detected": 16,
+  "median_latency_s": 0.35,
+  "warned": 1,
+  "median_warning_s": 0.9,
+  "false_alarms": 0,
+  "minutes": 8.3,
+  "predicted_warnings": 4,
+  "predicted_followed_by_incident": 1,
+  "by_kind": {
+    "contact": [
+      4,
+      17
+    ],
+    "off": [
+      12,
+      12
+    ],
+    "slide": [
+      0,
+      1
+    ],
+    "spin": [
+      0,
+      1
+    ],
+    "stopped": [
+      0,
+      1
+    ]
+  }
+}

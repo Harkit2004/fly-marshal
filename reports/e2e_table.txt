@@ -1,0 +1,24 @@
+session                   detected latency  false alm  warned-before  warnings that came true
+-- held-out TEST
+spa_gt3_demo       rules    4/19   0.33s 1.18/min   0 warned   0/0   ok
+spa_gt3_demo       model   11/19   0.36s 1.01/min   0 warned   0/1   ok
+spa_example        rules    7/28   0.33s 0.10/min   2 warned   2/5   ok
+spa_example        model   10/28   0.38s 0.73/min   3 warned   3/12  ok
+-- train (optimistic)
+vl_clean           rules    0/1      - s 0.76/min   0 warned   0/1   ok
+vl_clean           model    1/1   -0.60s 0.00/min   0 warned   0/0   ok
+vl_spin            rules    9/12   0.35s 0.13/min   0 warned   0/3   ok
+vl_spin            model   11/12   0.35s 0.00/min   2 warned   3/5   ok
+vl_offs            rules    9/12   0.35s 0.00/min   0 warned   0/1   ok
+vl_offs            model   11/12   0.35s 0.00/min   0 warned   0/1   ok
+vl_stopped         rules    9/28   0.36s 0.37/min   0 warned   0/3   ok
+vl_stopped         model   27/28   0.10s 0.12/min   8 warned   8/9   ok
+vl_contact         rules   19/37   0.36s 0.00/min   0 warned   0/1   ok
+vl_contact         model   34/37   0.29s 0.00/min   7 warned   6/7   ok
+vl_rejoin_limp     rules   16/32   0.35s 0.00/min   1 warned   1/4   ok
+vl_rejoin_limp     model   25/32   0.35s 0.00/min   6 warned   6/6   ok
+-- totals
+test  model  detected 21/47 (45%)   warned before 3   false alarms 0.83/min
+test  rules  detected 11/47 (23%)   warned before 2   false alarms 0.51/min
+train model  detected 109/122 (89%)   warned before 23   false alarms 0.02/min
+train rules  detected 62/122 (51%)   warned before 1   false alarms 0.21/min

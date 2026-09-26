@@ -1,0 +1,266 @@
+{
+  "train": [
+    "vl_clean",
+    "vl_spin",
+    "vl_offs",
+    "vl_stopped",
+    "vl_contact",
+    "vl_rejoin_limp"
+  ],
+  "test": {
+    "spa_gt3_demo": {
+      "ap_incident": 0.4892,
+      "auc_incident": 0.9797,
+      "ap_spin": 0.161,
+      "ap_off": 0.6529,
+      "ap_slide": 0.0276,
+      "ap_contact": 0.3478,
+      "kind_accuracy": 0.4722,
+      "ap_soon": 0.0193,
+      "auc_soon": 0.7208,
+      "alarm_level": {
+        "events": 16,
+        "detected": 9,
+        "recall": 0.5625,
+        "median_latency_s": 0.3649999999999949,
+        "false_alarms": 4,
+        "false_alarms_per_min": 0.6734044523257707
+      }
+    },
+    "spa_example": {
+      "ap_incident": 0.7535,
+      "auc_incident": 0.9722,
+      "ap_spin": 0.3808,
+      "ap_off": 0.579,
+      "ap_slide": 0.0209,
+      "ap_stopped": 0.9429,
+      "ap_contact": 0.303,
+      "kind_accuracy": 0.6267,
+      "ap_soon": 0.0535,
+      "auc_soon": 0.7426,
+      "alarm_level": {
+        "events": 25,
+        "detected": 10,
+        "recall": 0.4,
+        "median_latency_s": 0.4864999999999995,
+        "false_alarms": 6,
+        "false_alarms_per_min": 0.6226994713973376
+      }
+    }
+  },
+  "features": [
+    "speed_ratio",
+    "deficit_ratio",
+    "accel_excess_g",
+    "yaw_excess",
+    "wheels_out",
+    "off_line_m",
+    "gap_ahead_s",
+    "gap_behind_s",
+    "closing_behind_ratio",
+    "closing_ahead_ratio",
+    "deficit_rise_1s",
+    "deficit_rise_3s",
+    "accel_excess_min_1s",
+    "yaw_excess_max_1s",
+    "yaw_excess_mean_1s",
+    "wheels_out_max_1s",
+    "wheels_out_frac_3s",
+    "off_line_max_1s",
+    "lateral_drift",
+    "deficit_ratio_mean_3s",
+    "motion_align",
+    "ratio_min_3s"
+  ],
+  "classes": [
+    "none",
+    "spin",
+    "off",
+    "slide",
+    "stopped",
+    "contact"
+  ],
+  "model_comparison_loso": {
+    "lightgbm": {
+      "ap_incident": 0.5839,
+      "auc_incident": 0.9792,
+      "ap_spin": 0.2694,
+      "ap_off": 0.8865,
+      "ap_slide": 0.1555,
+      "ap_stopped": 0.1862,
+      "ap_contact": 0.1287,
+      "kind_accuracy": 0.5373,
+      "ap_soon": 0.0449,
+      "auc_soon": 0.7702,
+      "seconds": 197.6
+    },
+    "logistic": {
+      "ap_incident": 0.519,
+      "auc_incident": 0.9404,
+      "ap_spin": 0.0352,
+      "ap_off": 0.5243,
+      "ap_slide": 0.0258,
+      "ap_stopped": 0.0938,
+      "ap_contact": 0.0382,
+      "kind_accuracy": 0.5254,
+      "ap_soon": 0.0288,
+      "auc_soon": 0.7465,
+      "seconds": 140.9
+    }
+  },
+  "tuning_det": [
+    {
+      "ap": 0.6336,
+      "params": {
+        "num_leaves": 15,
+        "min_child_samples": 40,
+        "learning_rate": 0.1,
+        "n_estimators": 400,
+        "colsample_bytree": 0.8,
+        "reg_lambda": 5.0
+      }
+    },
+    {
+      "ap": 0.6234,
+      "params": {
+        "num_leaves": 15,
+        "min_child_samples": 20,
+        "learning_rate": 0.03,
+        "n_estimators": 700,
+        "colsample_bytree": 0.8,
+        "reg_lambda": 5.0
+      }
+    },
+    {
+      "ap": 0.6081,
+      "params": {
+        "num_leaves": 31,
+        "min_child_samples": 100,
+        "learning_rate": 0.05,
+        "n_estimators": 200,
+        "colsample_bytree": 1.0,
+        "reg_lambda": 5.0
+      }
+    },
+    {
+      "ap": 0.6081,
+      "params": {
+        "num_leaves": 31,
+        "min_child_samples": 100,
+        "learning_rate": 0.05,
+        "n_estimators": 200,
+        "colsample_bytree": 1.0,
+        "reg_lambda": 5.0
+      }
+    },
+    {
+      "ap": 0.604,
+      "params": {
+        "num_leaves": 31,
+        "min_child_samples": 40,
+        "learning_rate": 0.1,
+        "n_estimators": 700,
+        "colsample_bytree": 0.8,
+        "reg_lambda": 1.0
+      }
+    }
+  ],
+  "tuning_pred": [
+    {
+      "ap": 0.0656,
+      "params": {
+        "num_leaves": 15,
+        "min_child_samples": 100,
+        "learning_rate": 0.03,
+        "n_estimators": 200,
+        "colsample_bytree": 1.0,
+        "reg_lambda": 1.0
+      }
+    },
+    {
+      "ap": 0.0567,
+      "params": {
+        "num_leaves": 15,
+        "min_child_samples": 20,
+        "learning_rate": 0.03,
+        "n_estimators": 700,
+        "colsample_bytree": 0.8,
+        "reg_lambda": 1.0
+      }
+    },
+    {
+      "ap": 0.053,
+      "params": {
+        "num_leaves": 15,
+        "min_child_samples": 20,
+        "learning_rate": 0.05,
+        "n_estimators": 400,
+        "colsample_bytree": 0.8,
+        "reg_lambda": 0.0
+      }
+    },
+    {
+      "ap": 0.0461,
+      "params": {
+        "num_leaves": 15,
+        "min_child_samples": 40,
+        "learning_rate": 0.1,
+        "n_estimators": 400,
+        "colsample_bytree": 0.8,
+        "reg_lambda": 5.0
+      }
+    },
+    {
+      "ap": 0.0449,
+      "params": {}
+    }
+  ],
+  "cv_alarm_level": {
+    "detector": {
+      "events": 113,
+      "detected": 69,
+      "recall": 0.6106194690265486,
+      "median_latency_s": 0.36099999999999,
+      "false_alarms": 13,
+      "false_alarms_per_min": 0.2696298293554292,
+      "threshold": 0.771
+    },
+    "predictor": {
+      "threshold": 0.95,
+      "warned": 6,
+      "events": 113,
+      "warned_rate": 0.05309734513274336,
+      "median_lead_s": 1.3989999999999938,
+      "false_warnings_per_min": 0.12444453662558269
+    }
+  },
+  "chosen": {
+    "det": "blend",
+    "pred": "blend"
+  },
+  "feature_importance_detector": {
+    "ratio_min_3s": 1526116.8,
+    "wheels_out_frac_3s": 854085.3,
+    "yaw_excess_mean_1s": 725690.4,
+    "deficit_rise_3s": 458752.1,
+    "gap_ahead_s": 435695.6,
+    "yaw_excess_max_1s": 373370.7,
+    "deficit_ratio": 315802.8,
+    "gap_behind_s": 305752.4,
+    "deficit_ratio_mean_3s": 290784.9,
+    "closing_behind_ratio": 285803.8,
+    "accel_excess_min_1s": 282332.6,
+    "speed_ratio": 218471.8,
+    "wheels_out_max_1s": 214690.1,
+    "off_line_max_1s": 143708.5,
+    "off_line_m": 132050.2,
+    "closing_ahead_ratio": 117278.5,
+    "wheels_out": 110368.7,
+    "lateral_drift": 92394.9,
+    "motion_align": 72399.6,
+    "accel_excess_g": 70843.0,
+    "deficit_rise_1s": 69450.0,
+    "yaw_excess": 30558.3
+  },
+  "seconds": 2483.7
+}

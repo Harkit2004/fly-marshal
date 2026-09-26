@@ -1,0 +1,35 @@
+{
+  "session": "spa_example",
+  "mode": "model",
+  "incidents": 28,
+  "detected": 10,
+  "median_latency_s": 0.38,
+  "warned": 3,
+  "median_warning_s": 4.7,
+  "false_alarms": 7,
+  "minutes": 9.64,
+  "predicted_warnings": 12,
+  "predicted_followed_by_incident": 3,
+  "by_kind": {
+    "contact": [
+      3,
+      12
+    ],
+    "off": [
+      2,
+      2
+    ],
+    "slide": [
+      1,
+      7
+    ],
+    "spin": [
+      4,
+      4
+    ],
+    "stopped": [
+      0,
+      3
+    ]
+  }
+}

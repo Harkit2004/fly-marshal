@@ -1,0 +1,39 @@
+train rows 1,376,992 from 6 sessions
+  lightgbm       det AP 0.539  kind acc 0.541   pred AP 0.053   (236 s)
+  hist_gb        det AP 0.405  kind acc 0.537   pred AP 0.045   (120 s)
+  random_forest  det AP 0.525  kind acc 0.537   pred AP 0.041   (445 s)
+  logistic       det AP 0.564  kind acc 0.604   pred AP 0.026   (149 s)
+  tune det  0/10  AP 0.5388  {}
+  tune det  1/10  AP 0.5259  {'num_leaves': 63, 'min_child_samples': 40, 'learning_rate': 0.05, 'n_estimators': 200, 'colsample_bytree': 0.6, 'reg_lambda': 0.0}
+  tune det  2/10  AP 0.5350  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.03, 'n_estimators': 700, 'colsample_bytree': 0.8, 'reg_lambda': 5.0}
+  tune det  3/10  AP 0.5267  {'num_leaves': 31, 'min_child_samples': 40, 'learning_rate': 0.1, 'n_estimators': 700, 'colsample_bytree': 0.8, 'reg_lambda': 1.0}
+  tune det  4/10  AP 0.5445  {'num_leaves': 31, 'min_child_samples': 100, 'learning_rate': 0.03, 'n_estimators': 700, 'colsample_bytree': 1.0, 'reg_lambda': 0.0}
+  tune det  5/10  AP 0.5692  {'num_leaves': 31, 'min_child_samples': 100, 'learning_rate': 0.05, 'n_estimators': 200, 'colsample_bytree': 1.0, 'reg_lambda': 5.0}
+  tune det  6/10  AP 0.5055  {'num_leaves': 63, 'min_child_samples': 20, 'learning_rate': 0.03, 'n_estimators': 700, 'colsample_bytree': 0.6, 'reg_lambda': 1.0}
+  tune det  7/10  AP 0.5598  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.05, 'n_estimators': 400, 'colsample_bytree': 0.8, 'reg_lambda': 0.0}
+  tune det  8/10  AP 0.5333  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.03, 'n_estimators': 700, 'colsample_bytree': 0.8, 'reg_lambda': 1.0}
+  tune det  9/10  AP 0.6056  {'num_leaves': 15, 'min_child_samples': 40, 'learning_rate': 0.1, 'n_estimators': 400, 'colsample_bytree': 0.8, 'reg_lambda': 5.0}
+  tune det 10/10  AP 0.5574  {'num_leaves': 63, 'min_child_samples': 100, 'learning_rate': 0.05, 'n_estimators': 700, 'colsample_bytree': 1.0, 'reg_lambda': 1.0}
+  det: logistic AP 0.5637 vs tuned lightgbm 0.6056
+  det: blend AP 0.6209 vs tuned lightgbm 0.6056
+  -> det model: blend (CV AP 0.6209)
+  tune pred  0/10  AP 0.0526  {}
+  tune pred  1/10  AP 0.0394  {'num_leaves': 63, 'min_child_samples': 100, 'learning_rate': 0.1, 'n_estimators': 400, 'colsample_bytree': 1.0, 'reg_lambda': 0.0}
+  tune pred  2/10  AP 0.0450  {'num_leaves': 31, 'min_child_samples': 100, 'learning_rate': 0.1, 'n_estimators': 400, 'colsample_bytree': 0.8, 'reg_lambda': 0.0}
+  tune pred  3/10  AP 0.0431  {'num_leaves': 31, 'min_child_samples': 40, 'learning_rate': 0.1, 'n_estimators': 700, 'colsample_bytree': 0.6, 'reg_lambda': 5.0}
+  tune pred  4/10  AP 0.0457  {'num_leaves': 31, 'min_child_samples': 40, 'learning_rate': 0.1, 'n_estimators': 400, 'colsample_bytree': 0.6, 'reg_lambda': 0.0}
+  tune pred  5/10  AP 0.0445  {'num_leaves': 63, 'min_child_samples': 40, 'learning_rate': 0.05, 'n_estimators': 400, 'colsample_bytree': 1.0, 'reg_lambda': 1.0}
+  tune pred  6/10  AP 0.0758  {'num_leaves': 15, 'min_child_samples': 100, 'learning_rate': 0.03, 'n_estimators': 200, 'colsample_bytree': 1.0, 'reg_lambda': 1.0}
+  tune pred  7/10  AP 0.0560  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.05, 'n_estimators': 700, 'colsample_bytree': 0.8, 'reg_lambda': 5.0}
+  tune pred  8/10  AP 0.0468  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.1, 'n_estimators': 700, 'colsample_bytree': 0.6, 'reg_lambda': 0.0}
+  tune pred  9/10  AP 0.0533  {'num_leaves': 63, 'min_child_samples': 40, 'learning_rate': 0.05, 'n_estimators': 200, 'colsample_bytree': 1.0, 'reg_lambda': 1.0}
+  tune pred 10/10  AP 0.0431  {'num_leaves': 63, 'min_child_samples': 100, 'learning_rate': 0.1, 'n_estimators': 200, 'colsample_bytree': 1.0, 'reg_lambda': 0.0}
+  pred: logistic AP 0.0265 vs tuned lightgbm 0.0758
+  pred: blend AP 0.0700 vs tuned lightgbm 0.0758
+  -> pred model: lightgbm (CV AP 0.0758)
+detector threshold 0.846: CV recall 61.95%, 0.29 false alarms/min, latency 0.36100000000004684
+predictor threshold 0.9: CV warned 11/113 (lead 1.405999999999949 s), 0.3525928537724843 false warnings/min
+saved models/anomaly.pkl and models/risk.pkl
+  TEST spa_gt3_demo: det AP 0.490  kind acc 0.593  pred AP 0.014  | recall 50% (8/16), 3.03 FA/min, latency 0.36999999999999744
+  TEST spa_example: det AP 0.763  kind acc 0.755  pred AP 0.038  | recall 60% (15/25), 9.65 FA/min, latency 0.4700000000000273
+report -> C:\Users\ranje\Hackathon\formulahacks\reports\training\report.json  (4259.2 s)

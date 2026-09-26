@@ -1,0 +1,31 @@
+{
+  "session": "vl_stopped",
+  "mode": "model",
+  "incidents": 28,
+  "detected": 27,
+  "median_latency_s": 0.1,
+  "warned": 8,
+  "median_warning_s": 1.95,
+  "false_alarms": 1,
+  "minutes": 8.18,
+  "predicted_warnings": 9,
+  "predicted_followed_by_incident": 8,
+  "by_kind": {
+    "contact": [
+      3,
+      3
+    ],
+    "off": [
+      5,
+      5
+    ],
+    "slide": [
+      13,
+      14
+    ],
+    "stopped": [
+      6,
+      6
+    ]
+  }
+}

@@ -14,8 +14,7 @@ data/live_logs/
 *.acreplay
 *.parquet
 
-# Models and caches
-models/
+# Caches (trained models in models/ ARE committed: small, and the demo needs them)
 cv/cache/
 
 

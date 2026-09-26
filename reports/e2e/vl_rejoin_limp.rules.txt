@@ -1,0 +1,38 @@
+    t  car           kind  detected  latency_s  warned_s_before  pid_arrival_s  fly_arrival_s
+ 20.2    0 off_understeer      True       0.35              NaN            NaN            0.0
+ 26.5   14        contact     False        NaN              NaN            NaN            NaN
+ 26.5    0        contact      True      -0.94              NaN            NaN            0.0
+ 39.0    7        contact     False        NaN              NaN            NaN            NaN
+ 39.0    0        contact     False        NaN              NaN            NaN            NaN
+ 54.2    0 off_understeer      True       0.35              NaN            NaN            NaN
+ 99.4    0            off      True       0.35              NaN            NaN            NaN
+103.0   11        contact     False        NaN              NaN            NaN            NaN
+103.0    0        contact      True      -0.95              NaN            NaN            NaN
+104.1   11        contact     False        NaN              NaN            NaN            NaN
+104.1    0        contact      True       1.80              NaN            2.5            8.4
+112.2   15        contact      True       1.62              NaN            NaN            NaN
+112.2    0        contact     False        NaN              NaN            NaN            NaN
+172.3    0 off_understeer      True       0.36              NaN            NaN            0.3
+194.7    0 off_understeer      True       0.19              NaN            NaN            NaN
+213.9    0 off_understeer      True       0.34              NaN            NaN            0.0
+233.5    0           spin     False        NaN              NaN            NaN            NaN
+242.6    0 off_understeer      True       0.35              NaN            NaN            NaN
+307.3    0          slide     False        NaN              NaN            NaN            NaN
+320.8    0            off      True       0.26              NaN            NaN            NaN
+354.6   11        contact     False        NaN              NaN            NaN            NaN
+356.2   12  off_oversteer      True      -0.75              NaN            5.0           15.0
+359.5    9        contact     False        NaN              NaN            NaN            NaN
+359.5   12        contact     False        NaN              NaN            NaN            NaN
+360.6   12        contact     False        NaN              NaN            NaN            NaN
+360.6   14        contact     False        NaN              NaN            NaN            NaN
+361.6   12        contact     False        NaN              NaN            NaN            NaN
+361.6   14        contact     False        NaN              0.9            NaN            NaN
+365.6   12        stopped     False        NaN              NaN            NaN            NaN
+371.0    0            off      True       0.35              NaN            NaN            NaN
+385.1    0            off      True       0.35              NaN            NaN            NaN
+470.4    0 off_understeer      True       0.36              NaN            NaN            0.0
+
+ground-truth incidents: 32   detected: 16 (50%)
+median detection latency: 0.35 s   warned in advance: 1
+false alarms: 0 (0.0 per minute)   predicted warnings raised: 4
+by kind: contact 4/17   off 12/12   slide 0/1   spin 0/1   stopped 0/1

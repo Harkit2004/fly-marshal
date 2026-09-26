@@ -1,0 +1,18 @@
+    t  car           kind  detected  latency_s  warned_s_before  pid_arrival_s  fly_arrival_s
+ 35.6    0  off_oversteer      True       0.00              NaN            NaN            NaN
+ 37.2    0        stopped     False        NaN              NaN            NaN            NaN
+106.8    0        contact      True       0.38              NaN            NaN            NaN
+106.8   16        contact      True       0.38              NaN            NaN            NaN
+128.5    0           spin      True       0.15              NaN            NaN            NaN
+226.3    0 off_understeer      True       0.35              1.7            NaN            NaN
+263.5    0           spin      True       0.15              NaN            0.0            NaN
+290.8    0 off_understeer      True       0.36              NaN            NaN            NaN
+361.4    0            off      True       0.35              NaN            NaN            NaN
+392.7    0 off_understeer      True       0.34              NaN            NaN            0.0
+407.9    0 off_understeer      True       0.35              5.2            NaN            NaN
+451.5    0           spin      True      -0.40              NaN            NaN           11.3
+
+ground-truth incidents: 12   detected: 11 (92%)
+median detection latency: 0.35 s   warned in advance: 2
+false alarms: 0 (0.0 per minute)   predicted warnings raised: 5
+by kind: contact 2/2   off 6/6   spin 3/3   stopped 0/1

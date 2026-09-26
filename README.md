@@ -124,14 +124,45 @@ python -m pipeline.live_bridge --logs-dir data/live_logs                  # lear
 - `centerline.csv`: `track_pos, x, y, z, typical_speed_kmh`. From `fast_lane.ai` when `AC_ROOT` points at your AC install, otherwise averaged from car positions.
 - `meta.json`
 
-## Current baseline (rule-based, before any ML)
+## Incident models (trained)
 
-| Session | Incidents detected | Median latency | False alarms |
-|---|---|---|---|
-| synthetic_00 | 2 / 2 | 1.8 s | 0 |
-| spa_example (real, 15 cars, 10 min) | 6 / 13 (misses minor slides) | 0.36 s | 0.1 / min |
+Trained on the six Vallelunga sessions (Audi Quattro rally, one class): clean, spin, offs, stopped,
+contact, rejoin/limp. Tested on two sessions it never trained on: **Spa with a GT3 grid** and
+**Spa with F1 cars** (different track, different car class, 15 vs 20 Hz).
 
-Beating this with the trained models is the ML goal.
+```bash
+python -m pipeline.vrclog_adapter data/raw/vallelunga/spin.txt --name vl_spin     # (each log)
+python -m ml.dataset data/sessions/vl_* data/sessions/spa_gt3_demo data/sessions/spa_example
+python -m ml.train --train vl_clean vl_spin vl_offs vl_stopped vl_contact vl_rejoin_limp \
+                   --test spa_gt3_demo spa_example --candidates lightgbm logistic --trials 5
+python tools/compare_models.py --train vl_clean vl_spin vl_offs vl_stopped vl_contact vl_rejoin_limp \
+                   --test spa_gt3_demo spa_example
+```
+
+- **Detector** (what is happening now: spin / off / slide / stopped / contact): 50/50 blend of tuned LightGBM and logistic regression.
+- **Predictor** (will this car have an incident in the next 5 s): blend of the same two.
+- Chosen by leave-one-session-out cross-validation over LightGBM, HistGradientBoosting, random forest and logistic regression, then tuned. Alarm thresholds come from out-of-fold predictions with the brain's own alarm logic.
+- Features are all relative to what is normal at that point of that track (speed / typical speed, yaw beyond what the corner needs, acceleration beyond typical, gaps in seconds). Raw km/h, metres and G didn't transfer: the first model gave 3–10 false alarms/min on Spa.
+- Trains in ~40 min on a 12-core laptop CPU. Colab isn't needed (its free CPU is slower and a GPU doesn't help at this size).
+
+End to end through the real brain (`tools/compare_models.py`), incidents incl. hard contacts (≥15 km/h relative):
+
+| | Rules | Trained model |
+|---|---|---|
+| **Held-out Spa (GT3 + F1)**: detected | 11 / 47 (23%) | **21 / 47 (45%)** |
+| held-out: false alarms | 0.51 / min | 0.83 / min |
+| held-out: spins + offs | 10 / 11 | **11 / 11** |
+| held-out: contacts | 0 / 25 | 9 / 25 |
+| Vallelunga, cross-validated (honest) | – | 61% at 0.27 false alarms / min |
+| Vallelunga, final model (optimistic, it trained on these) | 62 / 122 | 109 / 122 |
+| Median detection latency | 0.33 s | 0.36 s |
+
+Weak spots: minor slides (1/8 on held-out), stopped cars on Spa F1 (0/3, rules 1/3), and prediction in general
+(warns before ~5–10% of incidents, ~1.4 s ahead). Most incidents here were player mistakes with little warning in the
+telemetry. Caveat: the Spa sessions were looked at once to diagnose the unit problem above, so they are not a
+perfectly untouched test. Record a fresh session on a new track for a clean final check.
+
+Full numbers: `reports/training/report.json`, `reports/e2e/`.
 
 ## FlyBrain setup (real FlyWire data)
 

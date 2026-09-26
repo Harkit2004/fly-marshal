@@ -16,6 +16,20 @@ class Track:
         tx = np.roll(self.x, -1) - np.roll(self.x, 1)
         tz = np.roll(self.z, -1) - np.roll(self.z, 1)
         n = np.hypot(tx, tz) + 1e-9
+        self.tan = np.stack([tx / n, tz / n], axis=1)      # unit direction of travel
+        # what "normal" looks like at each point, for car- and track-independent features:
+        #   curvature (1/m, smoothed over ~20 m) -> yaw rate the corner itself asks for
+        #   typical acceleration (m/s^2) from the typical speed profile: a = v dv/ds
+        ds = np.maximum(seg, 1e-3)
+        head = np.arctan2(self.tan[:, 1], self.tan[:, 0])
+        dh = (np.diff(np.r_[head, head[0]]) + np.pi) % (2 * np.pi) - np.pi
+        k = dh / ds
+        w = max(3, int(round(20.0 / max(float(np.median(ds)), 0.1))) | 1)
+        self.curv = np.convolve(np.pad(k, w // 2, mode="wrap"), np.ones(w) / w, "valid")
+        v = self.v / 3.6
+        dv = np.diff(np.r_[v, v[0]])
+        a = v * dv / ds
+        self.acc_typ = np.convolve(np.pad(a, w // 2, mode="wrap"), np.ones(w) / w, "valid")
         normal = np.stack([-tz / n, tx / n], axis=1)
         # orient normals to point away from the track's centroid ("outside")
         cx, cz = self.x.mean(), self.z.mean()

@@ -1,0 +1,5 @@
+   t  car    kind  detected latency_s warned_s_before pid_arrival_s fly_arrival_s
+30.0    0 stopped     False      None            None          None          None
+
+ground-truth incidents: 1   detected: 0 (0%)
+false alarms: 6 (0.8 per minute)   predicted warnings raised: 1

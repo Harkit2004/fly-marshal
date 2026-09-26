@@ -81,22 +81,34 @@ class Brain:
         byid = {c["car_id"]: c for c in cars}
         feats = self.features.update(t, cars)
 
-        for car, f in feats.items():
+        # score every racing car of this tick in one model call
+        racing = []
+        for car in feats:
             c = byid[car]
             if c.get("in_pit") or t < 15:
                 # a car that reaches the pits (or is removed there by AC) is no longer a track hazard
                 if car in self.active and c.get("in_pit"):
                     self.end(self.active[car], msgs)
                 continue
-            score = self.anomaly.score(f)
-            self.hot[car] = self.hot.get(car, 0) + 1 if score > ANOMALY_ON else 0
+            racing.append(car)
+        scored = dict(zip(racing, self.anomaly.score_many([feats[c] for c in racing])))
+        for car in racing:
+            self.hot[car] = self.hot.get(car, 0) + 1 if scored[car][0] > ANOMALY_ON else 0
+        quiet = [c for c in racing if c not in self.active]
+        preds = dict(zip(quiet, self.risk.predict_many(
+            [feats[c] for c in quiet], [scored[c][0] if self.hot[c] >= 3 else 0.0 for c in quiet])))
+
+        for car in racing:
+            f, c = feats[car], byid[car]
+            score, model_kind = scored[car]
             act = self.active.get(car)
 
             # reactive: sustained anomaly -> incident
             if self.hot[car] >= ANOMALY_TICKS and (act is None or act["type"] == "predicted"):
                 if act:
                     self.end(act, msgs)
-                ev = self.new_event(t, "incident", self.kind_of(f), car, c, score)
+                kind = {"off": "off-track"}.get(model_kind, model_kind) if model_kind else self.kind_of(f)
+                ev = self.new_event(t, "incident", kind, car, c, score)
                 self.active[car] = ev
                 self.dispatch.assign(ev)
                 msgs.append(message("risk", event=ev))
@@ -105,11 +117,11 @@ class Brain:
 
             # predictive: fast car closing on a slow one
             if act is None:
-                sustained = score if self.hot[car] >= 3 else 0.0
-                pred = self.risk.predict(car, f, sustained)
+                pred = preds.get(car)
                 if pred:
                     p, eta = pred
-                    ev = self.new_event(t, "predicted", "closing", car, c, p, eta)
+                    kind = "at risk" if self.risk.model is not None else "closing"
+                    ev = self.new_event(t, "predicted", kind, car, c, p, eta)
                     self.active[car] = ev
                     self.dispatch.assign(ev)
                     msgs.append(message("risk", event=ev))

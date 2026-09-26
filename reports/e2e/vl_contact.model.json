@@ -1,0 +1,35 @@
+{
+  "session": "vl_contact",
+  "mode": "model",
+  "incidents": 37,
+  "detected": 34,
+  "median_latency_s": 0.28500000000000003,
+  "warned": 7,
+  "median_warning_s": 1.7,
+  "false_alarms": 0,
+  "minutes": 8.24,
+  "predicted_warnings": 7,
+  "predicted_followed_by_incident": 6,
+  "by_kind": {
+    "contact": [
+      16,
+      18
+    ],
+    "off": [
+      9,
+      9
+    ],
+    "slide": [
+      6,
+      7
+    ],
+    "spin": [
+      2,
+      2
+    ],
+    "stopped": [
+      1,
+      1
+    ]
+  }
+}

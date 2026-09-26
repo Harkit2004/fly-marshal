@@ -1,0 +1,31 @@
+{
+  "session": "spa_gt3_demo",
+  "mode": "rules",
+  "incidents": 19,
+  "detected": 4,
+  "median_latency_s": 0.325,
+  "warned": 0,
+  "median_warning_s": null,
+  "false_alarms": 7,
+  "minutes": 5.94,
+  "predicted_warnings": 0,
+  "predicted_followed_by_incident": 0,
+  "by_kind": {
+    "contact": [
+      0,
+      13
+    ],
+    "off": [
+      4,
+      4
+    ],
+    "slide": [
+      0,
+      1
+    ],
+    "spin": [
+      0,
+      1
+    ]
+  }
+}

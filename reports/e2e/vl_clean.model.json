@@ -1,0 +1,19 @@
+{
+  "session": "vl_clean",
+  "mode": "model",
+  "incidents": 1,
+  "detected": 1,
+  "median_latency_s": -0.6,
+  "warned": 0,
+  "median_warning_s": null,
+  "false_alarms": 0,
+  "minutes": 7.86,
+  "predicted_warnings": 0,
+  "predicted_followed_by_incident": 0,
+  "by_kind": {
+    "stopped": [
+      1,
+      1
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+train rows 1,376,992 from 6 sessions
+  lightgbm       det AP 0.584  kind acc 0.537   pred AP 0.045   (198 s)
+  logistic       det AP 0.519  kind acc 0.525   pred AP 0.029   (141 s)
+  tune det  0/7  AP 0.5839  {}
+  tune det  1/7  AP 0.6336  {'num_leaves': 15, 'min_child_samples': 40, 'learning_rate': 0.1, 'n_estimators': 400, 'colsample_bytree': 0.8, 'reg_lambda': 5.0}
+  tune det  2/7  AP 0.6081  {'num_leaves': 31, 'min_child_samples': 100, 'learning_rate': 0.05, 'n_estimators': 200, 'colsample_bytree': 1.0, 'reg_lambda': 5.0}
+  tune det  3/7  AP 0.5596  {'num_leaves': 63, 'min_child_samples': 40, 'learning_rate': 0.05, 'n_estimators': 200, 'colsample_bytree': 0.6, 'reg_lambda': 0.0}
+  tune det  4/7  AP 0.6234  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.03, 'n_estimators': 700, 'colsample_bytree': 0.8, 'reg_lambda': 5.0}
+  tune det  5/7  AP 0.6040  {'num_leaves': 31, 'min_child_samples': 40, 'learning_rate': 0.1, 'n_estimators': 700, 'colsample_bytree': 0.8, 'reg_lambda': 1.0}
+  tune det  6/7  AP 0.5756  {'num_leaves': 31, 'min_child_samples': 100, 'learning_rate': 0.03, 'n_estimators': 700, 'colsample_bytree': 1.0, 'reg_lambda': 0.0}
+  tune det  7/7  AP 0.6081  {'num_leaves': 31, 'min_child_samples': 100, 'learning_rate': 0.05, 'n_estimators': 200, 'colsample_bytree': 1.0, 'reg_lambda': 5.0}
+  det: logistic AP 0.5190 vs tuned lightgbm 0.6336
+  det: blend AP 0.6591 vs tuned lightgbm 0.6336
+  -> det model: blend (CV AP 0.6591)
+  tune pred  0/7  AP 0.0449  {}
+  tune pred  1/7  AP 0.0656  {'num_leaves': 15, 'min_child_samples': 100, 'learning_rate': 0.03, 'n_estimators': 200, 'colsample_bytree': 1.0, 'reg_lambda': 1.0}
+  tune pred  2/7  AP 0.0436  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.05, 'n_estimators': 700, 'colsample_bytree': 0.8, 'reg_lambda': 5.0}
+  tune pred  3/7  AP 0.0384  {'num_leaves': 63, 'min_child_samples': 20, 'learning_rate': 0.03, 'n_estimators': 700, 'colsample_bytree': 0.6, 'reg_lambda': 1.0}
+  tune pred  4/7  AP 0.0530  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.05, 'n_estimators': 400, 'colsample_bytree': 0.8, 'reg_lambda': 0.0}
+  tune pred  5/7  AP 0.0567  {'num_leaves': 15, 'min_child_samples': 20, 'learning_rate': 0.03, 'n_estimators': 700, 'colsample_bytree': 0.8, 'reg_lambda': 1.0}
+  tune pred  6/7  AP 0.0461  {'num_leaves': 15, 'min_child_samples': 40, 'learning_rate': 0.1, 'n_estimators': 400, 'colsample_bytree': 0.8, 'reg_lambda': 5.0}
+  tune pred  7/7  AP 0.0335  {'num_leaves': 63, 'min_child_samples': 100, 'learning_rate': 0.05, 'n_estimators': 700, 'colsample_bytree': 1.0, 'reg_lambda': 1.0}
+  pred: logistic AP 0.0288 vs tuned lightgbm 0.0656
+  pred: blend AP 0.0661 vs tuned lightgbm 0.0656
+  -> pred model: blend (CV AP 0.0661)
+detector threshold 0.771: CV recall 61.06%, 0.27 false alarms/min, latency 0.36099999999999
+predictor threshold 0.95: CV warned 6/113 (lead 1.3989999999999938 s), 0.12444453662558269 false warnings/min
+saved models/anomaly.pkl and models/risk.pkl
+  TEST spa_gt3_demo: det AP 0.489  kind acc 0.472  pred AP 0.019  | recall 56% (9/16), 0.67 FA/min, latency 0.3649999999999949
+  TEST spa_example: det AP 0.753  kind acc 0.627  pred AP 0.053  | recall 40% (10/25), 0.62 FA/min, latency 0.4864999999999995
+report -> C:\Users\ranje\Hackathon\formulahacks\reports\training\report.json  (2483.7 s)
