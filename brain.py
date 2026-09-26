@@ -130,6 +130,10 @@ class Brain:
                 elif recovered or age > INCIDENT_MAX_S:
                     self.end(act, msgs)
 
+        # freed drones top up incidents that are still active
+        for ev in {id(e): e for e in self.active.values()}.values():
+            self.dispatch.reinforce(ev)
+
         # drones
         targets = self.dispatch.targets(byid)
         cmds = {d.id: self.pilots[d.id].command(d, targets[d.id], dt) for d in self.drones}

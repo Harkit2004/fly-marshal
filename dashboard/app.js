@@ -1,18 +1,19 @@
-// Race-control dashboard: listens to telemetry (8765) and brain (8766),
-// draws the 2D map, and hands the same state to the 3D view when toggled.
+// Race-control dashboard: listens to telemetry (8765) and brain (8766), draws the 2D map,
+// and hands the same state to the 3D view (view3d.js) and the fly-brain viewer (flybrain3d.js).
 
 const TEL_URL = "ws://localhost:8765";
 const BRAIN_URL = "ws://localhost:8766";
 
 export const state = {
-  track: null,          // {centerline: [[tp,x,y,z,v]...], length_m}
+  track: null,          // {track_id, centerline: [[tp,x,y,z,v]...], widths?, length_m}
   t: 0,
-  cars: new Map(),      // car_id -> frame
-  prevCars: new Map(),
-  drones: [],           // DroneState[]
-  events: new Map(),    // id -> RiskEvent
+  cars: new Map(), prevCars: new Map(), frameAt: 0, frameDt: 66,       // interpolation between ticks
+  drones: [], prevDrones: new Map(), dronesAt: 0, dronesDt: 66,
+  events: new Map(),
   report: null,
 };
+const ui = { labels: true, feeds: true, tiles: document.getElementById("tiles") };
+let view3d = null, flyBrain = null;
 
 // ---------- websockets ----------
 function connect(url, dotId, onMsg) {
@@ -26,9 +27,14 @@ function connect(url, dotId, onMsg) {
   open();
 }
 
+const ema = (old, v) => (old ? old * 0.8 + v * 0.2 : v);
+
 connect(TEL_URL, "conn-tel", (m) => {
   if (m.type === "track") { state.track = m; fitMap(); view3d?.setTrack(m); }
   else if (m.type === "frames") {
+    const now = performance.now();
+    state.frameDt = Math.min(250, ema(state.frameDt, now - state.frameAt));
+    state.frameAt = now;
     state.t = m.t;
     state.prevCars = state.cars;
     state.cars = new Map(m.cars.map((c) => [c.car_id, c]));
@@ -37,7 +43,15 @@ connect(TEL_URL, "conn-tel", (m) => {
 
 connect(BRAIN_URL, "conn-brain", (m) => {
   if (m.type === "drones") {
-    state.drones = m.drones; renderSide();
+    const now = performance.now();
+    state.dronesDt = Math.min(250, ema(state.dronesDt, now - state.dronesAt));
+    state.dronesAt = now;
+    state.prevDrones = new Map(state.drones.map((d) => [d.drone_id, d]));
+    state.drones = m.drones;
+    renderSide();
+    syncTiles();
+    const fly = m.drones.find((d) => d.pilot === "fly");
+    if (fly?.fly_activity?.fired) flyBrain?.fire(fly.fly_activity.fired);
     if (m.events) {
       const ids = m.events.map((e) => e.id + e.kind).join();
       if (ids !== state.eventKey) { state.eventKey = ids; state.events = new Map(m.events.map((e) => [e.id, e])); renderAlerts(); }
@@ -59,15 +73,16 @@ function fitMap() {
   canvas.width = r.width * dpr; canvas.height = r.height * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (!state.track) return;
-  const cl = state.track.centerline;
+  xf = fitTransform(state.track.centerline, r.width, r.height, 40);
+}
+function fitTransform(cl, w, h, pad) {
   const xs = cl.map((p) => p[1]), zs = cl.map((p) => p[3]);
   const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
-  const pad = 40;
-  const s = Math.min((r.width - 2 * pad) / (x1 - x0), (r.height - 2 * pad) / (z1 - z0));
-  xf = { s, ox: pad + ((r.width - 2 * pad) - (x1 - x0) * s) / 2 - x0 * s, oy: pad + ((r.height - 2 * pad) - (z1 - z0) * s) / 2 - z0 * s };
+  const s = Math.min((w - 2 * pad) / (x1 - x0), (h - 2 * pad) / (z1 - z0));
+  return { s, ox: pad + ((w - 2 * pad) - (x1 - x0) * s) / 2 - x0 * s, oy: pad + ((h - 2 * pad) - (z1 - z0) * s) / 2 - z0 * s };
 }
-const P = (x, z) => [x * xf.s + xf.ox, z * xf.s + xf.oy];
-window.addEventListener("resize", () => { fitMap(); view3d?.resize(); });
+const P = (x, z, t = xf) => [x * t.s + t.ox, z * t.s + t.oy];
+window.addEventListener("resize", () => { fitMap(); view3d?.resize(); flyBrain?.resize(); });
 
 function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
@@ -79,7 +94,6 @@ function draw2d(now) {
     ctx.fillText("Waiting for telemetry on " + TEL_URL + " …", 24, 40);
     return;
   }
-  // track
   const cl = state.track.centerline;
   ctx.lineJoin = "round"; ctx.lineCap = "round";
   ctx.beginPath();
@@ -89,28 +103,25 @@ function draw2d(now) {
   const [sx, sy] = P(cl[0][1], cl[0][3]);
   ctx.fillStyle = "#fff"; ctx.fillRect(sx - 2, sy - 8, 4, 16);
 
-  // events
   const pulse = (Math.sin(now / 220) + 1) / 2;
+  let k = 0;
   for (const e of state.events.values()) {
     const [a, b] = P(e.x, e.z);
     const col = e.type === "incident" ? css("--inc") : css("--pred");
     ctx.strokeStyle = col; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(a, b, 14 + pulse * 10, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = col; ctx.font = "600 12px system-ui";
-    ctx.fillText(`${e.type === "incident" ? "INCIDENT" : "RISK"} · ${e.kind}${e.eta_s ? " · " + e.eta_s + "s" : ""}`, a + 18, b - 16);
+    ctx.fillStyle = col; ctx.font = "600 12px system-ui"; ctx.textAlign = "left";
+    ctx.fillText(`${e.type === "incident" ? "INCIDENT" : "RISK"} · #${e.car_ids[0]} ${e.kind}${e.eta_s ? " · " + e.eta_s + "s" : ""}`, a + 18, b - 16 - 14 * (k++ % 3));
   }
 
-  // cars
   ctx.font = "600 10px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const flagged = new Set([...state.events.values()].flatMap((e) => e.car_ids));
   for (const c of state.cars.values()) {
     const [a, b] = P(c.x, c.z);
-    const flagged = [...state.events.values()].some((e) => e.car_ids.includes(c.car_id));
-    ctx.fillStyle = flagged ? css("--inc") : css("--car");
+    ctx.fillStyle = flagged.has(c.car_id) ? css("--inc") : css("--car");
     ctx.beginPath(); ctx.arc(a, b, 7, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#0d1214"; ctx.fillText(c.car_id, a, b + 0.5);
   }
-
-  // drones
   for (const d of state.drones) {
     const [a, b] = P(d.x, d.z);
     const col = d.pilot === "fly" ? css("--fly") : css("--pid");
@@ -125,6 +136,77 @@ function draw2d(now) {
     ctx.fillText(`${d.pilot === "fly" ? "🪰 " : ""}D${d.drone_id} ${d.mode}`, a + 11, b + 12);
     ctx.textAlign = "center"; ctx.font = "600 10px system-ui";
   }
+}
+
+// ---------- 3D overlays: minimap, drone tiles, HUD ----------
+const mini = document.getElementById("minimap"), mctx = mini.getContext("2d");
+function drawMinimap() {
+  if (!state.track) return;
+  const dpr = window.devicePixelRatio || 1, r = mini.getBoundingClientRect();
+  if (mini.width !== Math.round(r.width * dpr)) { mini.width = r.width * dpr; mini.height = r.height * dpr; }
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mctx.clearRect(0, 0, r.width, r.height);
+  const t = fitTransform(state.track.centerline, r.width, r.height, 12);
+  mctx.beginPath();
+  state.track.centerline.forEach((p, i) => { const [a, b] = P(p[1], p[3], t); i ? mctx.lineTo(a, b) : mctx.moveTo(a, b); });
+  mctx.closePath(); mctx.strokeStyle = "#56625f"; mctx.lineWidth = 3; mctx.stroke();
+  const flagged = new Set([...state.events.values()].flatMap((e) => e.car_ids));
+  for (const c of state.cars.values()) {
+    const [a, b] = P(c.x, c.z, t);
+    mctx.fillStyle = flagged.has(c.car_id) ? css("--inc") : "#d8e2df";
+    mctx.fillRect(a - 1.5, b - 1.5, 3, 3);
+  }
+  for (const d of state.drones) {
+    const [a, b] = P(d.x, d.z, t);
+    mctx.fillStyle = d.pilot === "fly" ? css("--fly") : css("--pid");
+    mctx.beginPath(); mctx.arc(a, b, d.drone_id === view3d?.selected ? 5 : 3.5, 0, Math.PI * 2); mctx.fill();
+  }
+  if (view3d) {           // main camera position + heading
+    const cam = view3d.camera, dir = cam.getWorldDirection(cam.position.clone());
+    const [a, b] = P(cam.position.x, cam.position.z, t);
+    mctx.strokeStyle = "#fff"; mctx.lineWidth = 1.5;
+    mctx.beginPath(); mctx.moveTo(a, b); mctx.lineTo(a + dir.x * 14, b + dir.z * 14); mctx.stroke();
+    mctx.beginPath(); mctx.arc(a, b, 3, 0, Math.PI * 2); mctx.stroke();
+  }
+}
+
+function syncTiles() {
+  const sel = document.getElementById("drone-select");
+  for (const d of state.drones) {
+    if (!ui.tiles.querySelector(`[data-drone="${d.drone_id}"]`)) {
+      const tile = document.createElement("div");
+      tile.className = "tile"; tile.dataset.drone = d.drone_id;
+      tile.innerHTML = `<div class="feed"></div><div class="tag"><span class="rec">●</span><span class="name"></span><span class="mode"></span></div>`;
+      tile.onclick = () => { selectDrone(d.drone_id); setCam("drone"); };
+      ui.tiles.appendChild(tile);
+      const b = document.createElement("button");
+      b.textContent = `${d.pilot === "fly" ? "🪰" : "D"}${d.drone_id}`; b.dataset.drone = d.drone_id;
+      b.title = `Select drone ${d.drone_id} (key ${d.drone_id + 1})`;
+      b.onclick = () => selectDrone(d.drone_id);
+      sel.appendChild(b);
+    }
+    const tile = ui.tiles.querySelector(`[data-drone="${d.drone_id}"]`);
+    tile.querySelector(".name").textContent = `D${d.drone_id} · ${d.pilot === "fly" ? "FLY" : "PID"}`;
+    tile.querySelector(".mode").textContent = d.mode.toUpperCase();
+  }
+  const selId = view3d?.selected ?? 0;
+  ui.tiles.querySelectorAll(".tile").forEach((t) => t.classList.toggle("sel", +t.dataset.drone === selId));
+  sel.querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.drone === selId));
+}
+
+function updateHud() {
+  const hud = document.getElementById("hud");
+  hud.hidden = !(view3d && view3d.camMode === "drone" && !document.getElementById("view3d").hidden);
+  if (hud.hidden) return;
+  const info = view3d.hudInfo();
+  if (!info) return;
+  const { d, alt, speed, fov } = info;
+  const ev = d.event_id && state.events.get(d.event_id);
+  document.getElementById("hud-title").textContent = `DRONE ${d.drone_id} · ${d.pilot === "fly" ? "FLY BRAIN" : "PID"} · ${d.mode.toUpperCase()}${ev ? ` · TRACKING #${ev.car_ids[0]} ${ev.kind.toUpperCase()}` : ""}`;
+  document.getElementById("hud-time").textContent = `T+${state.t.toFixed(1)}s`;
+  document.getElementById("hud-stats").innerHTML =
+    `<span>ALT ${alt.toFixed(0)} m</span><span>SPD ${speed.toFixed(0)} km/h</span><span>ZOOM ${(55 / fov).toFixed(1)}×</span>` +
+    `<span>X ${d.x.toFixed(0)} Z ${d.z.toFixed(0)}</span>`;
 }
 
 // ---------- side panels ----------
@@ -145,7 +227,7 @@ function renderReport() {
   const r = state.report, el = document.getElementById("report");
   if (!r) return;
   el.classList.remove("empty");
-  const chip = (ok, label) => `<span class="chip ${ok ? "bad" : ""}">${label}</span>`;
+  const chip = (bad, label) => `<span class="chip ${bad ? "bad" : ""}">${label}</span>`;
   el.innerHTML = `<div class="sum">${r.summary}</div><div class="chips">` +
     chip(r.stopped, r.stopped ? "stationary" : "moving") +
     chip(r.on_racing_line, r.on_racing_line ? "on racing line" : "off line") +
@@ -174,30 +256,65 @@ function renderSide() {
       el.style.left = `${50 + Math.min(0, v) * 50}%`; el.style.width = `${Math.abs(v) * 50}%`;
     }
     document.getElementById("spikes").textContent = a.spikes.toLocaleString();
+    if (a.regions && flyInfo) {
+      for (const [reg, v] of Object.entries(a.regions)) {
+        const b = document.getElementById("rg-" + reg);
+        if (b) b.textContent = `${Math.round(v * 100)}%`;
+      }
+    }
+    document.getElementById("fly-kind").textContent =
+      a.source === "flywire" ? "FlyWire connectome" : "placeholder brain (connectome data not loaded)";
   }
 }
 
-// ---------- 2D / 3D toggle ----------
-let view3d = null;
+// ---------- fly brain viewer ----------
+let flyInfo = null;
+import("./flybrain3d.js").then(({ FlyBrain3D, REGIONS, REGION_INFO }) => {
+  flyBrain = new FlyBrain3D(document.getElementById("flybrain"));
+  flyInfo = REGION_INFO;
+  const legend = document.getElementById("fly-legend");
+  legend.innerHTML = REGIONS.map((r) =>
+    `<li><i style="background:#${REGION_INFO[r].color.toString(16).padStart(6, "0")}"></i>${REGION_INFO[r].label}<b id="rg-${r}">–</b></li>`).join("");
+});
+
+// ---------- 2D / 3D, cameras, selection ----------
 const b2 = document.getElementById("btn-2d"), b3 = document.getElementById("btn-3d");
-b2.onclick = () => { document.body.classList.remove("mode3d"); b2.classList.add("on"); b3.classList.remove("on"); canvas.hidden = false; document.getElementById("view3d").hidden = true; };
+const stage3d = [document.getElementById("view3d"), mini, ui.tiles];
+b2.onclick = () => {
+  document.body.classList.remove("mode3d"); b2.classList.add("on"); b3.classList.remove("on");
+  canvas.hidden = false; stage3d.forEach((e) => (e.hidden = true));
+};
 b3.onclick = async () => {
   document.body.classList.add("mode3d"); b3.classList.add("on"); b2.classList.remove("on");
-  canvas.hidden = true; document.getElementById("view3d").hidden = false;
+  canvas.hidden = true; stage3d.forEach((e) => (e.hidden = false));
+  ui.tiles.hidden = !ui.feeds;
   if (!view3d) {
     const { View3D } = await import("./view3d.js");
-    view3d = new View3D(document.getElementById("view3d"), state);
+    view3d = new View3D(document.getElementById("view3d"), state, ui);
     if (state.track) view3d.setTrack(state.track);
   }
   view3d.resize();
 };
-for (const [id, mode] of [["cam-orbit", "orbit"], ["cam-fly", "fly"], ["cam-incident", "incident"]]) {
-  document.getElementById(id).onclick = () => view3d?.setCamera(mode);
+function setCam(mode) {
+  view3d?.setCamera(mode);
+  document.querySelectorAll("[data-cam]").forEach((b) => b.classList.toggle("on", b.dataset.cam === mode));
 }
+function selectDrone(id) { view3d?.selectDrone(id); syncTiles(); }
+document.querySelectorAll("[data-cam]").forEach((b) => (b.onclick = () => setCam(b.dataset.cam)));
+document.getElementById("tg-labels").onchange = (e) => (ui.labels = e.target.checked);
+document.getElementById("tg-feeds").onchange = (e) => { ui.feeds = e.target.checked; ui.tiles.hidden = !ui.feeds || canvas.hidden === false; };
+const CAMS = ["orbit", "chase", "drone", "tv", "incident"];
+window.addEventListener("keydown", (e) => {
+  if (!view3d || canvas.hidden === false) return;
+  if (e.key >= "1" && e.key <= "9") selectDrone(+e.key - 1);
+  if (e.key === "c") setCam(CAMS[(CAMS.indexOf(view3d.camMode) + 1) % CAMS.length]);
+});
 
 function loop(now) {
   document.getElementById("clock").textContent = `t = ${state.t.toFixed(1)} s`;
-  if (!canvas.hidden) draw2d(now); else view3d?.update(now);
+  if (!canvas.hidden) draw2d(now);
+  else if (view3d) { view3d.update(); drawMinimap(); updateHud(); }
+  flyBrain?.update();
   requestAnimationFrame(loop);
 }
 fitMap();

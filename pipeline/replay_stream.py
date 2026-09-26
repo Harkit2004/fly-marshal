@@ -24,19 +24,31 @@ from shared.config import DATA, TELEMETRY_WS_PORT
 from shared.schemas import FRAME_FIELDS
 
 
-def load(session: Path):
-    df = pd.read_csv(session / "telemetry.csv")
+def track_message(session: Path) -> str:
+    """The "track" message: centreline, optional per-point half widths, and the track id
+    (used by the dashboard to pick a custom track model)."""
     cl = pd.read_csv(session / "centerline.csv")
     if "y" not in cl.columns:
         cl["y"] = 0.0
     if "typical_speed_kmh" not in cl.columns:
         cl["typical_speed_kmh"] = 0.0
+    meta_path = session / "meta.json"
+    meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
     seg = ((cl[["x", "z"]].diff().fillna(0) ** 2).sum(axis=1) ** 0.5).sum()
-    track_msg = json.dumps({
+    msg = {
         "type": "track",
+        "track_id": meta.get("track") or session.name,
         "length_m": float(seg),
         "centerline": cl[["track_pos", "x", "y", "z", "typical_speed_kmh"]].round(3).values.tolist(),
-    })
+    }
+    if {"half_width_l", "half_width_r"} <= set(cl.columns):
+        msg["widths"] = cl[["half_width_l", "half_width_r"]].round(2).values.tolist()
+    return json.dumps(msg)
+
+
+def load(session: Path):
+    df = pd.read_csv(session / "telemetry.csv")
+    track_msg = track_message(session)
     df["in_pit"] = df["in_pit"].astype(bool)
     ticks = []
     for t, g in df.groupby("t", sort=True):

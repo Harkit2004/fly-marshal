@@ -21,3 +21,8 @@ DRONE_MAX_ALT = 60.0
 DRONE_PATROL_ALT = 25.0
 DRONE_MIN_SEPARATION = 10.0
 DRONE_TRACK_CLEARANCE = 12.0   # min horizontal distance from centreline
+
+# Fly brain visualisation: brain.py samples this many neurons per region every tick and
+# sends which of them fired. The dashboard lays out the same regions in the same order.
+FLY_REGIONS = ["photo_l", "photo_r", "motion_l", "motion_r", "central", "descending"]
+FLY_SAMPLE_PER_REGION = 250

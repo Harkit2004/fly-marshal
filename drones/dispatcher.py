@@ -62,6 +62,32 @@ class Dispatcher:
         self.events[event["id"]] = {"event": event, "drones": [d.id for d in sent]}
         return [d.id for d in sent]
 
+    def reinforce(self, event: dict) -> list[int]:
+        """Send newly freed drones to an active incident that is short of drones.
+        In versus mode the fly drone always joins; otherwise top up to one drone."""
+        info = self.events.get(event["id"])
+        if info is None or event["type"] != "incident":
+            return []
+        mine = [d for d in self.drones if d.event_id == event["id"]]
+        free = [d for d in self.drones if d.mode == "patrol"]
+        if not free:
+            return []
+        p = self.track.standoff(event["track_pos"], STANDOFF_M, HOLD_ALT)
+        send = []
+        if self.versus and not any(d.pilot == "fly" for d in mine):
+            send += [d for d in free if d.pilot == "fly"][:1]
+        if not any(d.pilot != "fly" for d in mine):
+            pid = [d for d in free if d.pilot != "fly"]
+            if pid:
+                send.append(min(pid, key=lambda d: self.eta(d, p)))
+        for d in send:
+            lift = np.array([0.0, VERSUS_STACK_M if d.pilot == "fly" else 0.0, 0.0])
+            d.mode, d.event_id, d.target, d.follow_car = ("escort" if any(m.mode == "escort" for m in mine) else "hold"), event["id"], p + lift, None
+            if d.mode == "escort":
+                d.follow_car = event["car_ids"][0]
+            info["drones"].append(d.id)
+        return [d.id for d in send]
+
     def escort(self, event_id: str, car_id: int) -> None:
         for d in self.drones:
             if d.event_id == event_id:

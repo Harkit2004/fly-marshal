@@ -137,7 +137,11 @@ def centerline_frame(tm, df: pd.DataFrame, bins: int = CENTERLINE_BINS) -> pd.Da
     clean = df[(df.in_pit == 0) & (df.wheels_out == 0) & (df.speed_kmh > 40)]
     b = np.minimum((clean.track_pos * bins).astype(int), bins - 1)
     v = clean.groupby(b).speed_kmh.median().reindex(range(bins)).interpolate(limit_direction="both")
-    return pd.DataFrame({"track_pos": s, "x": x, "y": y, "z": z, "typical_speed_kmh": v.to_numpy()})
+    # half widths from the AI line payload when it has them (fast_lane.ai), else the model's constant
+    wl = np.interp(s, tm.s, np.resize(tm.side_l, len(tm.s)))
+    wr = np.interp(s, tm.s, np.resize(tm.side_r, len(tm.s)))
+    return pd.DataFrame({"track_pos": s, "x": x, "y": y, "z": z, "typical_speed_kmh": v.to_numpy(),
+                         "half_width_l": wl, "half_width_r": wr})
 
 
 def convert(log: Path, name: str | None, ac_root: str | None) -> Path:

@@ -9,6 +9,7 @@ data/raw/*
 data/processed/*
 data/sessions/*
 data/frames/*
+data/live_logs/
 !data/**/.gitkeep
 *.acreplay
 *.parquet
@@ -27,3 +28,8 @@ Thumbs.db
 
 # Secrets
 .env
+
+# Custom 3D models (can be large / licensed)
+dashboard/assets/models/*.glb
+dashboard/assets/models/*.gltf
+dashboard/assets/models/*.bin

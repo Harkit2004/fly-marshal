@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from shared.config import ROOT
+from shared.config import FLY_REGIONS, FLY_SAMPLE_PER_REGION, ROOT
 
 FLYBRAIN_DIR = ROOT / "third_party" / "flybrain"
 SOURCE = FLYBRAIN_DIR / "flybrain_tello_real_brain.py"
@@ -70,10 +70,40 @@ def build_connectome(data_dir: Path, stride: int, device):
 
 
 class RealFlyBrainAdapter:
-    """Maps RealFlyBrain's Tello RC output (-100..100) onto our forward/turn/climb (0..1 / -1..1)."""
+    """Maps RealFlyBrain's Tello RC output (-100..100) onto our forward/turn/climb (0..1 / -1..1),
+    and reports which sampled neurons fired (for the dashboard's 3D brain view)."""
 
-    def __init__(self, brain):
+    def __init__(self, brain, seed: int = 0):
+        import torch
         self.brain = brain
+        b = brain
+        motion = b.motion_indices
+        half = len(motion) // 2
+        special = set(b.r16_idx.tolist()) | set(b.r78_idx.tolist()) | set(motion.tolist()) | set(b.dn_indices.tolist())
+        rng = np.random.default_rng(seed)
+        central = np.array(sorted(set(rng.choice(b.n_neurons, min(b.n_neurons, 20000), replace=False)) - special))
+        groups = {
+            "photo_l": b.r16_left_idx.cpu().numpy(), "photo_r": b.r16_right_idx.cpu().numpy(),
+            "motion_l": motion[:half].cpu().numpy(), "motion_r": motion[half:].cpu().numpy(),
+            "central": central, "descending": b.dn_indices.cpu().numpy(),
+        }
+        # fixed sample per region, same order as shared.config.FLY_REGIONS
+        sample = []
+        for r in FLY_REGIONS:
+            g = groups[r]
+            k = min(FLY_SAMPLE_PER_REGION, len(g))
+            pick = rng.choice(g, k, replace=False) if k else np.zeros(0, int)
+            sample.append(np.pad(pick, (0, FLY_SAMPLE_PER_REGION - k), constant_values=-1))
+        self.sample = torch.as_tensor(np.concatenate(sample), device=b.device)
+        self.valid = self.sample >= 0
+        self.fired_acc = torch.zeros(b.n_neurons, dtype=torch.bool, device=b.device)
+        # record every spike in the control window, not just the last 1 ms substep
+        orig_step = b._step
+
+        def step(i_input):
+            orig_step(i_input)
+            self.fired_acc |= b.spikes
+        b._step = step
 
     @classmethod
     def load(cls, data_dir: str | None = None, substeps: int = 20):
@@ -95,10 +125,17 @@ class RealFlyBrainAdapter:
         return cls(RealFlyBrain(conn, neurons, pr, dn, motion, n, device, substeps=substeps))
 
     def step(self, flow: list[float]) -> dict:
+        self.fired_acc.zero_()
         motor, metrics = self.brain.compute(np.clip(np.asarray(flow, dtype=np.float32), 0, 1))
+        hit = self.fired_acc[self.sample.clamp(min=0)] & self.valid
+        fired = hit.nonzero().flatten().tolist()
+        per = hit.view(len(FLY_REGIONS), FLY_SAMPLE_PER_REGION).float().mean(dim=1).tolist()
         return {
             "forward": max(0.0, motor["forward"] / 100.0),
             "turn": motor["yaw"] / 100.0,
             "climb": motor["vertical"] / 100.0,
             "spikes": int(metrics["total_spikes"]),
+            "regions": {r: round(v, 3) for r, v in zip(FLY_REGIONS, per)},
+            "fired": fired,
+            "source": "flywire",
         }

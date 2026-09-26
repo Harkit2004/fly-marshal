@@ -3,11 +3,14 @@
 Track 1 · Safety Diagnosis. Telemetry spots a developing hazard or an incident on track, the nearest drone goes there, and race control gets a live view and an incident report. One of the drones is flown by a fruit-fly connectome. The pitch: low-cost safety coverage for club circuits and long tracks that can't afford cameras and marshals everywhere.
 
 ```
-AC + VRC Race Logger ──► vrclog_adapter ──► session folder ──► replay_stream ──ws:8765──► brain.py ──ws:8766──► dashboard
-   (teammate)             (reuses the logger's      │                              features → detectors → events
-                           parser + detectors)      └──► process ──► ML training      → dispatcher → pilots (fly / PID)
-                                                                                      → safety layer → drone sim
+                                   live:   live_bridge (tails the logger's chunk files) ─┐
+AC + VRC Race Logger ─┤                                                                   ├─ws:8765─► brain.py ─ws:8766─► dashboard
+                      └─ vrclog_adapter ─► session folder ─► replay_stream ──────────────┘   features → detectors → events
+                                                 └─► process ─► ML training                  → dispatcher → pilots (fly / PID)
+                                                                                             → safety layer → drone sim
 ```
+
+Live and replay publish identical messages, so the brain and dashboard don't care which one is running.
 
 ## Built on
 
@@ -47,6 +50,31 @@ python -m http.server 8000 --directory dashboard     # open http://localhost:800
 python tools/evaluate.py data/sessions/spa_example
 ```
 
+## Live mode (race running in AC)
+
+```bash
+# AC running a session with the VRC Race Logger installed; reference = a converted session of the same track
+python -m pipeline.live_bridge --ac-root "D:/Steam/steamapps/common/assettocorsa" --reference data/sessions/our_track_clean_01
+python brain.py
+```
+
+The logger writes a chunk at least every 10 s (`FLUSH_SECONDS` in `vrc_race_logger.lua`), so live data runs 10–12 s behind the game. Set `FLUSH_SECONDS = 1` in your installed copy of the app (not in `third_party/`) for about 2–3 s. To test live mode without the game:
+
+```bash
+python tools/simulate_live_logger.py data/raw/vrclog_...txt --logs data/live_logs --flush 2
+python -m pipeline.live_bridge --logs-dir data/live_logs --reference data/sessions/spa_example
+```
+
+## Dashboard
+
+- **2D map**: race-control overview with alerts, incident card and drone list.
+- **3D view**: track with kerbs, run-off, sponsor boards, gantry, grandstand and trees; animated cars and drones, interpolated between ticks.
+  - Cameras: **Orbit**, **Chase** (orbit around the selected drone), **Drone cam** (the drone's gimbal camera with HUD; drag = pan/tilt, wheel = zoom, double-click = auto-track), **TV cam** (nearest trackside camera zooms on the action), **Incident**.
+  - Live **feed tiles** for every drone; click one to fly its camera. Keys: `1`–`9` select a drone, `c` cycles cameras.
+  - Minimap with the camera's position and heading.
+- **Fly brain panel**: 3D view of the fly brain. 250 sampled neurons per region (photoreceptors L/R, motion T4/T5 L/R, central brain, descending) flash when they fire. With the real connectome these are real spikes from `RealFlyBrain`; with the placeholder they are synthetic and labelled as such. The layout is schematic, not FlyWire coordinates.
+- **Custom models**: glTF cars, drones and per-track models via `dashboard/assets/models/models.json` (see the README there).
+
 ## Layout and owners
 
 | Path | Owner | What |
@@ -55,8 +83,10 @@ python tools/evaluate.py data/sessions/spa_example
 | `pipeline/vrclog_adapter.py` | Teammate | `vrclog_*.txt` → `data/sessions/<name>/` (telemetry, events, centreline, meta) |
 | `pipeline/process.py` | Teammate | Session → training table with features and `incident_in_5s` labels (`data/processed/`) |
 | `pipeline/replay_stream.py` | Teammate | Streams a session over websocket in real time (the demo runs on this) |
+| `pipeline/live_bridge.py` | Teammate | Streams the race running in AC right now, from the logger's chunk files |
+| `tools/simulate_live_logger.py` | Teammate | Fakes the logger mid-race from an old log, for testing live mode |
 | `cv/report.py` | Teammate | Incident reports. Telemetry version works; vision-model version is a TODO |
-| `dashboard/` | Teammate | 2D race-control map + Three.js 3D view with sponsor boards |
+| `dashboard/` | Teammate | 2D map, 3D view (cameras, drone feeds, sponsor boards), fly-brain viewer, custom model hooks |
 | `ml/features.py`, `ml/detectors.py` | You | Online features; anomaly detector and risk predictor (rule baselines, swap in trained models) |
 | `drones/` | You | Sim, PID and FlyBrain pilots, safety layer, dispatcher |
 | `drones/flybrain_real.py` | You | Loads the real connectome from `third_party/flybrain` |

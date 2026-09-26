@@ -21,7 +21,7 @@ import math
 import numpy as np
 
 from drones.sim import Drone
-from shared.config import DRONE_MAX_SPEED
+from shared.config import DRONE_MAX_SPEED, FLY_REGIONS, FLY_SAMPLE_PER_REGION
 
 
 class PIDPilot:
@@ -57,7 +57,19 @@ class PlaceholderFlyBrain:
         climb = np.tanh(2.0 * vert) + self.rng.normal(0, 0.05)
         forward = np.clip(fwd * (1.0 - 0.6 * abs(turn)), 0, 1)
         spikes = int(30000 + 8000 * (abs(turn) + abs(climb) + forward) + self.rng.integers(0, 3000))
-        return {"forward": float(forward), "turn": float(turn), "climb": float(climb), "spikes": spikes}
+        # population activity per region, loosely following the inputs (it's a placeholder)
+        rates = {
+            "photo_l": 0.1 + 0.5 * left + 0.2 * fwd, "photo_r": 0.1 + 0.5 * right + 0.2 * fwd,
+            "motion_l": 0.05 + 0.4 * max(0.0, turn), "motion_r": 0.05 + 0.4 * max(0.0, -turn),
+            "central": 0.08 + 0.1 * (abs(turn) + forward), "descending": 0.05 + 0.3 * forward + 0.2 * abs(climb),
+        }
+        fired = []
+        for k, r in enumerate(FLY_REGIONS):
+            hit = np.nonzero(self.rng.random(FLY_SAMPLE_PER_REGION) < min(0.9, rates[r]) * 0.35)[0]
+            fired.extend((hit + k * FLY_SAMPLE_PER_REGION).tolist())
+        return {"forward": float(forward), "turn": float(turn), "climb": float(climb), "spikes": spikes,
+                "regions": {r: round(float(v), 3) for r, v in rates.items()}, "fired": fired,
+                "source": "placeholder"}
 
 
 class FlyBrainPilot:
@@ -99,4 +111,5 @@ class FlyBrainPilot:
         dist = float(np.linalg.norm(target - d.pos))
         speed = o["forward"] * DRONE_MAX_SPEED * min(1.0, dist / 40.0)
         d.activity = {k: round(v, 3) if isinstance(v, float) else v for k, v in o.items()}
+        d.activity["turn_cmd"] = round(turn, 3)
         return np.array([math.cos(d.yaw) * speed, o["climb"] * self.CLIMB_SPEED, math.sin(d.yaw) * speed])
