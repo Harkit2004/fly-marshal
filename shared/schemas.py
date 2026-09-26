@@ -108,8 +108,8 @@ class IncidentReport:
     event_id: str
     stopped: bool
     on_racing_line: bool
-    debris: bool
-    smoke: bool
+    debris: Optional[bool]          # None = unknown (only a camera / vision model can tell)
+    smoke: Optional[bool]
     cars_approaching_s: Optional[float]
     summary: str
     frame_path: Optional[str] = None

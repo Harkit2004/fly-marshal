@@ -11,12 +11,16 @@ plus --delay. For a snappier live demo, set FLUSH_SECONDS = 1 in your *installed
 copy (<AC>/apps/lua/vrc_race_logger/vrc_race_logger.lua), not in third_party/.
 Playback runs --delay seconds behind the newest data so it stays smooth between chunks.
 
-The track message needs a reference centreline (typical speeds per track_pos), so pass a
-session folder already converted from the same track, e.g. a clean practice run:
+The track (centreline, widths, typical speed per track_pos) comes from, in order:
+  --reference <session>   a session already converted from the same track (best typical speeds)
+  the track's AI line     <AC>/content/tracks/<track>/<layout>/ai/fast_lane.ai
+  the first lap           learnt from the cars' positions (custom tracks without an AI line)
+(settings.toml live.track_source picks between the last two.) AC root, delay and track source
+all live in settings.toml [live]; the flags below override them.
 
-  python -m pipeline.live_bridge --ac-root "D:/Steam/steamapps/common/assettocorsa" \
-      --reference data/sessions/our_track_clean_01
-  python -m pipeline.live_bridge --logs-dir <folder with _active_recording.txt> --reference ...
+  python -m pipeline.live_bridge
+  python -m pipeline.live_bridge --reference data/sessions/our_track_clean_01
+  python -m pipeline.live_bridge --logs-dir <folder with _active_recording.txt>
 """
 
 from __future__ import annotations
@@ -31,8 +35,10 @@ from pathlib import Path
 
 from websockets.asyncio.server import broadcast, serve
 
+from pipeline import track_source
 from pipeline.replay_stream import track_message
 from shared.config import TELEMETRY_WS_PORT
+from shared.settings import get
 
 # F line: F,t,car,posX,posY,posZ,compass,speedKmh,gas,brake,steer,gear,vLocX,vLocZ,yawRate,
 #         accX,accY,accZ,nd0,nd1,nd2,nd3,wheelsOut,surfHex,spline
@@ -118,27 +124,75 @@ class LogTail:
         self.pending = {}
 
 
+class TrackBuilder:
+    """Produces the track message once enough is known about the live session."""
+
+    def __init__(self, reference: Path | None, ac_root: str | None, source: str):
+        self.ac_root, self.source = ac_root, source
+        self.msg = track_message(reference) if reference else None
+        self.first_lap = track_source.FirstLap()
+        self.samples: list = []
+        self.said = None
+
+    def say(self, text):
+        if text != self.said:
+            print(f"[live] {text}")
+            self.said = text
+
+    def feed(self, tail: LogTail, cars: list) -> str | None:
+        """Call with every frame; returns the message the first time the track is ready."""
+        if self.msg:
+            return None
+        track_full = tail.meta.get("trackFull", "")
+        if not track_full:
+            return None
+        for c in cars:
+            self.first_lap.add(c)
+            if len(self.samples) < 200 and c["speed_kmh"] > 30:
+                self.samples.append((c["track_pos"], c["x"], c["z"]))
+        ai = track_source.ai_line_path(track_full, self.ac_root) if self.source != "first_lap" else None
+        if ai and len(self.samples) >= 30:
+            self.msg = track_source.from_ai_line(ai, track_full, self.samples)
+            self.say(f"track from AI line: {ai}")
+            return self.msg
+        if not ai and self.source == "ai_line":
+            self.say(f"no fast_lane.ai for {track_full} under {self.ac_root}; set live.track_source = \"auto\"")
+            return None
+        if not ai:
+            cov = self.first_lap.coverage
+            self.say(f"learning {track_full} from the first lap: {int(cov * 10) * 10}% of the lap seen")
+            if cov >= track_source.FIRST_LAP_COVERAGE:
+                self.msg = self.first_lap.message(track_full)
+                self.say(f"track learnt from the first lap ({track_full})")
+                return self.msg
+        return None
+
+
 async def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ac-root", default=os.environ.get("AC_ROOT"))
+    ap.add_argument("--ac-root", default=os.environ.get("AC_ROOT") or get("live.ac_root"))
     ap.add_argument("--logs-dir", type=Path, help="defaults to <ac-root>/logs")
-    ap.add_argument("--reference", type=Path, required=True, help="converted session folder of the same track")
-    ap.add_argument("--delay", type=float, default=2.0, help="seconds to stay behind the newest data")
+    ap.add_argument("--reference", type=Path, help="converted session folder of the same track (optional)")
+    ap.add_argument("--track-source", default=get("live.track_source"), choices=["auto", "ai_line", "first_lap"])
+    ap.add_argument("--delay", type=float, default=float(get("live.delay_s")), help="seconds to stay behind the newest data")
     ap.add_argument("--port", type=int, default=TELEMETRY_WS_PORT)
     args = ap.parse_args()
     logs = args.logs_dir or (Path(args.ac_root) / "logs" if args.ac_root else None)
     if not logs:
-        ap.error("pass --ac-root (or set AC_ROOT) or --logs-dir")
+        ap.error("pass --ac-root (or set live.ac_root in settings.toml) or --logs-dir")
 
-    track_msg = track_message(args.reference)
     tail = LogTail(logs)
+    track = TrackBuilder(args.reference, args.ac_root, args.track_source)
 
     async def handler(ws):
-        await ws.send(track_msg)
+        if track.msg:
+            await ws.send(track.msg)
         await ws.wait_closed()
 
     async with serve(handler, "localhost", args.port) as server:
         print(f"[live] watching {logs} · streaming on ws://localhost:{args.port}")
+        if not (logs / "_active_recording.txt").exists():
+            print("[live] no active recording yet: start a session in AC with the VRC Race Logger app enabled")
         clock0 = None                      # (session_t, wall) anchor for smooth playout
         while True:
             if not tail.find_session():
@@ -154,7 +208,11 @@ async def main():
                     clock0 = (newest, time.perf_counter())
                 while tail.frames and tail.frames[0][0] <= now_t:
                     t, cars = tail.frames.popleft()
-                    broadcast(server.connections, json.dumps({"type": "frames", "t": t, "cars": cars}))
+                    new_track = track.feed(tail, cars)
+                    if new_track:
+                        broadcast(server.connections, new_track)
+                    if track.msg:          # brain + dashboard need the track before frames mean anything
+                        broadcast(server.connections, json.dumps({"type": "frames", "t": t, "cars": cars}))
             await asyncio.sleep(1 / 60)
 
 

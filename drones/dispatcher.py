@@ -15,10 +15,13 @@ from drones.sim import Drone
 from shared.config import DRONE_MAX_SPEED, DRONE_PATROL_ALT
 from shared.track import Track
 
-STANDOFF_M = 18.0
-HOLD_ALT = 22.0
-ESCORT_BACK_M = 25.0
-VERSUS_STACK_M = 14.0
+from shared.settings import get
+
+# tune in settings.toml [drones]
+STANDOFF_M = float(get("drones.standoff_m"))
+HOLD_ALT = float(get("drones.hold_alt_m"))
+ESCORT_BACK_M = float(get("drones.escort_back_m"))
+VERSUS_STACK_M = float(get("drones.versus_stack_m"))
 
 
 class Dispatcher:

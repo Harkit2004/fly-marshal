@@ -86,3 +86,5 @@ ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: col
 .fly-kind { font-size: 12px; margin-top: 4px; }
 .muted { color: var(--muted); }
 [hidden] { display: none !important; }
+
+.chip.unknown { opacity: .55; border-style: dashed; }

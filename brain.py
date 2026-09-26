@@ -27,14 +27,16 @@ from drones.safety import SafetyLayer
 from drones.sim import Drone
 from ml.detectors import AnomalyDetector, RiskPredictor
 from ml.features import OnlineFeatures
+from shared.settings import get
 from shared.config import BRAIN_WS_PORT, DATA, DRONE_COUNT, DRONE_PATROL_ALT, TELEMETRY_WS_PORT
 from shared.schemas import RiskEvent, message
 from shared.track import Track
 
-ANOMALY_ON = 0.5
-ANOMALY_TICKS = 8           # ~0.5 s at 15 Hz before an incident is raised
-PREDICT_TTL_S = 8.0         # a prediction expires this long after its eta
-INCIDENT_MAX_S = 90.0
+# tune in settings.toml [detection]
+ANOMALY_ON = float(get("detection.anomaly_on"))
+ANOMALY_TICKS = int(get("detection.anomaly_ticks"))       # 8 = ~0.5 s at 15 Hz before an incident is raised
+PREDICT_TTL_S = float(get("detection.predict_ttl_s"))     # a prediction expires this long after its eta
+INCIDENT_MAX_S = float(get("detection.incident_max_s"))
 
 
 class Brain:
@@ -155,8 +157,10 @@ class Brain:
 
 async def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--no-versus", action="store_true", help="don't also send the fly drone to incidents")
-    ap.add_argument("--steer-assist", type=float, default=0.0, help="0-1, blend beacon bearing into the fly's turn")
+    ap.add_argument("--no-versus", action="store_true", default=not get("drones.versus"),
+                    help="don't also send the fly drone to incidents (settings.toml drones.versus)")
+    ap.add_argument("--steer-assist", type=float, default=float(get("flybrain.steer_assist")),
+                    help="0-1, blend beacon bearing into the fly's turn (settings.toml flybrain.steer_assist)")
     args = ap.parse_args()
     fly_brain = RealFlyBrainAdapter.load()     # None -> placeholder fly
 

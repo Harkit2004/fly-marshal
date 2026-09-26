@@ -31,6 +31,10 @@ or, in an existing clone:
 git submodule update --init
 ```
 
+## Settings
+
+Everything you'd want to tune lives in **`settings.toml`** at the repo root, with a comment on every line: AC install path and live delay, where the live track shape comes from, detection thresholds, drone limits, versus mode, fly-brain model and synapse stride, the vision model, 3D scene sizes, and custom car/drone/track models. Python reads it directly. The dashboard receives its part inside the track message, so restart the replay or live bridge after changing `[scene]`, `[models]` or `[tracks]`.
+
 ## Quick start (no game needed)
 
 ```bash
@@ -53,16 +57,30 @@ python tools/evaluate.py data/sessions/spa_example
 ## Live mode (race running in AC)
 
 ```bash
-# AC running a session with the VRC Race Logger installed; reference = a converted session of the same track
-python -m pipeline.live_bridge --ac-root "D:/Steam/steamapps/common/assettocorsa" --reference data/sessions/our_track_clean_01
+# set live.ac_root in settings.toml, start a session in AC with the VRC Race Logger app on, then:
+python -m pipeline.live_bridge
 python brain.py
+python -m http.server 8000 --directory dashboard
 ```
+
+No converted session is needed. The bridge reads the track name from the logger and builds the track itself:
+
+1. `--reference data/sessions/<name>`, if you pass one (best typical speeds, from real laps).
+2. Otherwise the track's AI line, `<AC>/content/tracks/<track>/<layout>/ai/fast_lane.ai`: exact shape, widths and AI target speeds.
+3. Otherwise (a custom track with no AI line) it learns the shape from the first lap: drive one clean lap and the track appears on the dashboard. Nothing is streamed until then.
+
+### Our own track
+
+1. Build or download the track and install it in `<AC>/content/tracks/` (a track made in Blender goes through Kunos' ksEditor to a `.kn5`; RTB (Race Track Builder) exports straight to AC).
+2. Record an AI line in AC (drive clean laps with the AI line recorder, or use CSP's) so `fast_lane.ai` exists. Without one, the first-lap fallback still works.
+3. Optional look: export the track model to `.glb` (Content Manager → *Unpack KN5* → FBX → Blender → glTF), put it in `dashboard/assets/models/` and add a `[tracks."<track>/<layout>"]` entry in `settings.toml`.
+4. Race it with the logger on, and run the three commands above.
 
 The logger writes a chunk at least every 10 s (`FLUSH_SECONDS` in `vrc_race_logger.lua`), so live data runs 10–12 s behind the game. Set `FLUSH_SECONDS = 1` in your installed copy of the app (not in `third_party/`) for about 2–3 s. To test live mode without the game:
 
 ```bash
 python tools/simulate_live_logger.py data/raw/vrclog_...txt --logs data/live_logs --flush 2
-python -m pipeline.live_bridge --logs-dir data/live_logs --reference data/sessions/spa_example
+python -m pipeline.live_bridge --logs-dir data/live_logs                  # learns the track from the first lap
 ```
 
 ## Dashboard
@@ -72,8 +90,9 @@ python -m pipeline.live_bridge --logs-dir data/live_logs --reference data/sessio
   - Cameras: **Orbit**, **Chase** (orbit around the selected drone), **Drone cam** (the drone's gimbal camera with HUD; drag = pan/tilt, wheel = zoom, double-click = auto-track), **TV cam** (nearest trackside camera zooms on the action), **Incident**.
   - Live **feed tiles** for every drone; click one to fly its camera. Keys: `1`–`9` select a drone, `c` cycles cameras.
   - Minimap with the camera's position and heading.
-- **Fly brain panel**: 3D view of the fly brain. 250 sampled neurons per region (photoreceptors L/R, motion T4/T5 L/R, central brain, descending) flash when they fire. With the real connectome these are real spikes from `RealFlyBrain`; with the placeholder they are synthetic and labelled as such. The layout is schematic, not FlyWire coordinates.
-- **Custom models**: glTF cars, drones and per-track models via `dashboard/assets/models/models.json` (see the README there).
+- **Fly brain panel**: 20,073 real FlyWire neurons at their real coordinates inside the FlyWire brain mesh. A neuron flashes only when that neuron spiked in the connectome simulation; with the placeholder pilot the brain stays dark.
+- **Incident card**: what telemetry knows (moving/stationary, on/off line, next car's arrival). Debris and smoke show as "?" until the vision model has looked at the drone frame.
+- **Custom models**: glTF cars, drones and per-track models via `settings.toml` (see `dashboard/assets/models/README.md`).
 
 ## Layout and owners
 
@@ -84,8 +103,9 @@ python -m pipeline.live_bridge --logs-dir data/live_logs --reference data/sessio
 | `pipeline/process.py` | Teammate | Session → training table with features and `incident_in_5s` labels (`data/processed/`) |
 | `pipeline/replay_stream.py` | Teammate | Streams a session over websocket in real time (the demo runs on this) |
 | `pipeline/live_bridge.py` | Teammate | Streams the race running in AC right now, from the logger's chunk files |
+| `pipeline/track_source.py` | Teammate | Live track shape from the AI line or the first lap |
 | `tools/simulate_live_logger.py` | Teammate | Fakes the logger mid-race from an old log, for testing live mode |
-| `cv/report.py` | Teammate | Incident reports. Telemetry version works; vision-model version is a TODO |
+| `cv/report.py` | Teammate | Incident reports. Telemetry version works; vision-model version is a TODO (`settings.toml [vision]`) |
 | `dashboard/` | Teammate | 2D map, 3D view (cameras, drone feeds, sponsor boards), fly-brain viewer, custom model hooks |
 | `ml/features.py`, `ml/detectors.py` | You | Online features; anomaly detector and risk predictor (rule baselines, swap in trained models) |
 | `drones/` | You | Sim, PID and FlyBrain pilots, safety layer, dispatcher |
@@ -93,6 +113,7 @@ python -m pipeline.live_bridge --logs-dir data/live_logs --reference data/sessio
 | `brain.py` | You | Ties ML and drones together |
 | `tools/evaluate.py` | You | Offline scoring: detection rate, latency, false alarms, drone arrival |
 | `shared/` | Both | Message formats, config, track geometry. Change only together |
+| `settings.toml` | Both | Every tunable, in plain language |
 
 ## Session folder format
 
@@ -119,9 +140,7 @@ Everything comes from FlyWire's public v783 release. No login is needed.
 ```bash
 python tools/fetch_flywire.py              # ~10 MB: neurons, cell types, sides, coordinates + brain mesh -> 3D viewer works
 python tools/fetch_flywire.py --synapses   # + 2.7 GB per-synapse table -> the connectome can run
-set FLYBRAIN_DATA=datalywire
-set FLYBRAIN_SYNAPSE_STRIDE=2               # optional, if 8 GB VRAM is tight
-python brain.py --steer-assist 0.0          # raise it only if the fly can't turn toward targets
+python brain.py                            # data dir, model and synapse stride: settings.toml [flybrain]
 ```
 
 - `fly_neurons_real.csv` is ordered left side first. RealFlyBrain splits its photoreceptor and motion pools into halves by index, so with this order its "left/right" becomes anatomical (about 95% exact for R1-6: 4,425 left vs 4,031 right) instead of the arbitrary split its README warns about.

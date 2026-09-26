@@ -1,0 +1,124 @@
+# Marshal Fly settings — the one file to edit.
+#
+# Everything here has a sensible default, so you can delete any line and it still runs.
+# Python reads this file directly (shared/settings.py). The dashboard gets the [scene],
+# [models] and [tracks] parts inside the "track" message from the replay / live bridge,
+# so restart the bridge after editing those, then refresh the page.
+# Environment variables still win where noted (handy for one-off runs).
+
+# ─────────────────────────────────────────────────────────────────────────────
+[live]
+# Where Assetto Corsa is installed. Used to find the logger's output (<ac_root>/logs)
+# and the track's AI line (<ac_root>/content/tracks/<track>/<layout>/ai/fast_lane.ai).
+# Env AC_ROOT overrides this.
+ac_root = "C:/Program Files (x86)/Steam/steamapps/common/assettocorsa"
+
+# How far behind the newest logged data the live stream plays, in seconds.
+# The logger writes a chunk every FLUSH_SECONDS (10 by default in vrc_race_logger.lua;
+# set it to 1 in your installed copy for live demos). Keep delay a bit above that.
+delay_s = 2.0
+
+# Where the track shape comes from when you go live:
+#   "ai_line"   read the track's fast_lane.ai (best: exact shape, widths, AI speeds)
+#   "first_lap" learn it from the cars' own positions during the first lap
+#   "auto"      ai_line if the file exists, otherwise first_lap
+track_source = "auto"
+
+# ─────────────────────────────────────────────────────────────────────────────
+[detection]
+# An incident is raised when the anomaly score stays above `anomaly_on` for
+# `anomaly_ticks` telemetry ticks in a row (15 ticks = 1 s). Lower = faster but more false alarms.
+anomaly_on = 0.5
+anomaly_ticks = 8
+
+# A prediction ("car X is about to be hit") is dropped this long after its ETA passes.
+predict_ttl_s = 8.0
+
+# Incidents close on their own after this long, or when the car pits / drives away / recovers.
+incident_max_s = 90.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+[drones]
+count = 3                  # drone 0 is the fly-brain drone, the rest are PID
+max_speed_mps = 25.0       # 25 m/s = 90 km/h
+max_accel_mps2 = 8.0
+min_alt_m = 15.0           # height above the track surface
+max_alt_m = 60.0
+patrol_alt_m = 25.0
+min_separation_m = 10.0    # drones never get closer than this to each other
+track_clearance_m = 12.0   # never fly lower than min_alt within this distance of the racing line
+
+standoff_m = 18.0          # how far to the side of an incident a drone parks
+hold_alt_m = 22.0          # altitude while holding over an incident
+escort_back_m = 25.0       # how far behind a limping car an escort drone flies
+
+# Versus mode: every incident gets the nearest PID drone AND the fly drone ("Fly vs Code").
+versus = true
+versus_stack_m = 14.0      # vertical gap between the two so they don't collide
+
+# ─────────────────────────────────────────────────────────────────────────────
+[flybrain]
+# Needs the FlyWire data: python tools/fetch_flywire.py --synapses
+data_dir = "data/flywire"                 # env FLYBRAIN_DATA overrides
+
+# "corrected" = LIF neurons with published time constants (tau_m 20 ms). Use this.
+# "upstream"  = the dylankainth/flybrain model as written (saturates; for comparison only).
+model = "corrected"                       # env FLYBRAIN_MODEL overrides
+
+# Keep every Nth synapse. 1 = the full brain (RTX 3070 / any 8 GB GPU).
+# 0 = automatic: 1 with a CUDA GPU, 8 on CPU (a 16 GB laptop manages 8, ~4 s per brain step).
+synapse_stride = 0                        # env FLYBRAIN_SYNAPSE_STRIDE overrides
+
+# 0-1: blend the direct bearing-to-target into the fly's turn. 0 = pure fly brain.
+steer_assist = 0.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+[vision]
+# Vision-language model that looks at the drone camera frame of an incident and
+# fills in what telemetry cannot know: debris, smoke/fire, driver out of the car,
+# car blocking the racing line, marshals on track. Until it runs, the dashboard
+# shows those fields as "?" rather than guessing.
+enabled = false
+provider = "anthropic"                    # "anthropic" | "openai" | "ollama" (local)
+model = "claude-sonnet-5"                 # any image-capable model of that provider
+api_key_env = "ANTHROPIC_API_KEY"         # name of the env var holding the key (never put the key here)
+cache_dir = "cv/cache"                    # answers are cached per incident so demos never need the network
+timeout_s = 8.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+[scene]
+# 3D dashboard look. Sizes in metres.
+board_gap_m = 4.0          # gap between the track edge and the sponsor barrier
+board_height_m = 1.2
+panel_length_m = 14.0      # length of one sponsor's panel along the barrier
+car_scale = 1.4            # cars/drones are drawn larger than life so you can see them
+drone_scale = 3.0
+kerb_radius_m = 220.0      # corners tighter than this get kerbs and sand run-off
+tv_camera_spacing_m = 380.0
+terrain_detail = 220       # ground grid cells per side; lower if the page is slow
+mirror_z = false           # flip if the 3D track looks mirrored compared with the 2D map
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Custom 3D models (glTF .glb). Put files in dashboard/assets/models/.
+# Leave `file` empty to use the built-in procedural model.
+[models.car]
+file = ""                  # e.g. "formula.glb"
+scale = 1.0                # model units -> metres
+rotation_y = 0.0           # radians; the car must face +X
+y_offset = 0.0
+
+[models.drone]
+file = ""                  # e.g. "quad.glb"
+scale = 1.0
+rotation_y = 0.0
+rotor_nodes = "rotor|prop" # nodes whose name matches this spin
+
+# Custom track models, keyed by the AC track id ("<track>/<layout>", as the logger reports it).
+# The procedural track is hidden when a model loads (set hide_procedural = false to keep both).
+# Export an AC track: Content Manager -> track -> "Unpack KN5" -> open the FBX in Blender -> export .glb.
+# [tracks."our_track/main"]
+# file = "our_track.glb"
+# scale = 1.0
+# rotation_y = 0.0
+# offset = [0.0, 0.0, 0.0]
+# hide_procedural = true

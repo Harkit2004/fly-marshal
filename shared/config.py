@@ -12,12 +12,14 @@ DASHBOARD_PORT = 8000      # python -m http.server
 SAMPLE_HZ = 15             # VRC Race Logger default fast-stream rate
 CENTERLINE_BINS = 2000     # bins of track_pos in centerline.csv
 
-# Drones
-DRONE_COUNT = 3
-DRONE_MAX_SPEED = 25.0     # m/s (~90 km/h)
-DRONE_MAX_ACCEL = 8.0      # m/s^2
-DRONE_MIN_ALT = 15.0       # m above the track surface (AC y is up)
-DRONE_MAX_ALT = 60.0
-DRONE_PATROL_ALT = 25.0
-DRONE_MIN_SEPARATION = 10.0
-DRONE_TRACK_CLEARANCE = 12.0   # min horizontal distance from centreline
+# Drones: tune these in settings.toml [drones]
+from shared.settings import get as _get
+
+DRONE_COUNT = int(_get("drones.count"))
+DRONE_MAX_SPEED = float(_get("drones.max_speed_mps"))
+DRONE_MAX_ACCEL = float(_get("drones.max_accel_mps2"))
+DRONE_MIN_ALT = float(_get("drones.min_alt_m"))          # m above the track surface (AC y is up)
+DRONE_MAX_ALT = float(_get("drones.max_alt_m"))
+DRONE_PATROL_ALT = float(_get("drones.patrol_alt_m"))
+DRONE_MIN_SEPARATION = float(_get("drones.min_separation_m"))
+DRONE_TRACK_CLEARANCE = float(_get("drones.track_clearance_m"))   # min horizontal distance from centreline

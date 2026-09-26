@@ -21,6 +21,7 @@ import pandas as pd
 from websockets.asyncio.server import broadcast, serve
 
 from shared.config import DATA, TELEMETRY_WS_PORT
+from shared.settings import dashboard_settings
 from shared.schemas import FRAME_FIELDS
 
 
@@ -39,7 +40,9 @@ def track_message(session: Path) -> str:
         "type": "track",
         "track_id": meta.get("track") or session.name,
         "length_m": float(seg),
-        "centerline": cl[["track_pos", "x", "y", "z", "typical_speed_kmh"]].round(3).values.tolist(),
+        "centerline": cl[["track_pos", "x", "y", "z", "typical_speed_kmh"]]
+                      .round({"track_pos": 5, "x": 3, "y": 3, "z": 3, "typical_speed_kmh": 1}).values.tolist(),
+        "settings": dashboard_settings(),
     }
     if {"half_width_l", "half_width_r"} <= set(cl.columns):
         msg["widths"] = cl[["half_width_l", "half_width_r"]].round(2).values.tolist()

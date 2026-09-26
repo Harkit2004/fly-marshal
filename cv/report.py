@@ -28,7 +28,7 @@ def telemetry_report(event: dict, f: dict) -> IncidentReport:
     if approach is not None:
         parts.append(f"next car arrives in {approach} s")
     return IncidentReport(
-        event_id=event["id"], stopped=stopped, on_racing_line=on_line, debris=False, smoke=False,
+        event_id=event["id"], stopped=stopped, on_racing_line=on_line, debris=None, smoke=None,   # telemetry can't see these
         cars_approaching_s=approach, summary=", ".join(parts), frame_path=None,
     )
 

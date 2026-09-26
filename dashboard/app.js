@@ -3,6 +3,7 @@
 
 const TEL_URL = "ws://localhost:8765";
 const BRAIN_URL = "ws://localhost:8766";
+const VER = new URL(import.meta.url).search;   // "?v=N" from index.html, passed on so modules refresh together
 
 export const state = {
   track: null,          // {track_id, centerline: [[tp,x,y,z,v]...], widths?, length_m}
@@ -228,11 +229,12 @@ function renderReport() {
   if (!r) return;
   el.classList.remove("empty");
   const chip = (bad, label) => `<span class="chip ${bad ? "bad" : ""}">${label}</span>`;
+  // debris / smoke come only from the vision report; null means nobody has looked yet
+  const seen = (v, what) => v == null ? `<span class="chip unknown" title="needs the drone camera + vision model">${what}: ?</span>` : chip(v, v ? what : `no ${what}`);
   el.innerHTML = `<div class="sum">${r.summary}</div><div class="chips">` +
     chip(r.stopped, r.stopped ? "stationary" : "moving") +
     chip(r.on_racing_line, r.on_racing_line ? "on racing line" : "off line") +
-    chip(r.debris, r.debris ? "debris" : "no debris") +
-    chip(r.smoke, r.smoke ? "smoke" : "no smoke") +
+    seen(r.debris, "debris") + seen(r.smoke, "smoke") +
     (r.cars_approaching_s != null ? chip(r.cars_approaching_s < 5, `next car ${r.cars_approaching_s}s`) : "") +
     `</div>` + (r.frame_path ? `<img src="${r.frame_path}" alt="drone view" style="margin-top:8px;border-radius:6px">` : "");
 }
@@ -272,7 +274,7 @@ function renderSide() {
 }
 
 // ---------- fly brain viewer ----------
-import("./flybrain3d.js").then(({ FlyBrain3D, GROUP_INFO }) => {
+import("./flybrain3d.js" + VER).then(({ FlyBrain3D, GROUP_INFO }) => {
   const legend = document.getElementById("fly-legend");
   const kind = document.getElementById("fly-kind");
   flyBrain = new FlyBrain3D(document.getElementById("flybrain"), (status) => {
@@ -298,7 +300,7 @@ b3.onclick = async () => {
   canvas.hidden = true; stage3d.forEach((e) => (e.hidden = false));
   ui.tiles.hidden = !ui.feeds;
   if (!view3d) {
-    const { View3D } = await import("./view3d.js");
+    const { View3D } = await import("./view3d.js" + VER);
     view3d = new View3D(document.getElementById("view3d"), state, ui);
     if (state.track) view3d.setTrack(state.track);
   }

@@ -10,7 +10,7 @@ set FLYBRAIN_DATA=data/flywire. That folder holds:
   fly_neurons_real.csv                          root_id, primary_type, nt_type (+ side, super_class, x, y, z)
   fafb_v783_princeton_synapse_table.csv.gz      per-synapse table, read directly
   (or fly_synapses_real.csv                     pre_root_id, post_root_id, size, if you have the flybrain format)
-Set FLYBRAIN_SYNAPSE_STRIDE=N to keep every Nth synapse if 8 GB VRAM is tight.
+Set FLYBRAIN_SYNAPSE_STRIDE=N to keep every Nth synapse (default 1 with CUDA, 8 on CPU).
 
 Interface used by drones/pilots.py:
   brain = RealFlyBrainAdapter.load()          # None when data/torch is missing
@@ -29,6 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from shared.config import DATA, ROOT
+from shared.settings import get
 
 FLYBRAIN_DIR = ROOT / "third_party" / "flybrain"
 SOURCE = FLYBRAIN_DIR / "flybrain_tello_real_brain.py"
@@ -213,7 +214,9 @@ class RealFlyBrainAdapter:
 
     @classmethod
     def load(cls, data_dir: str | None = None, substeps: int = 20):
-        data_dir = Path(data_dir or os.environ.get("FLYBRAIN_DATA", DATA / "flywire"))
+        data_dir = Path(data_dir or get("flybrain.data_dir", env="FLYBRAIN_DATA"))
+        if not data_dir.is_absolute():
+            data_dir = ROOT / data_dir
         if not (data_dir / "fly_neurons_real.csv").exists():
             print(f"[flybrain] no connectome in {data_dir} (run tools/fetch_flywire.py --synapses); placeholder controller in use")
             return None
@@ -227,13 +230,14 @@ class RealFlyBrainAdapter:
             print("[flybrain] torch not installed; placeholder controller in use")
             return None
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        stride = int(os.environ.get("FLYBRAIN_SYNAPSE_STRIDE", "1"))
+        # full wiring needs a GPU; on a CPU-only 16 GB laptop default to every 8th synapse
+        stride = int(get("flybrain.synapse_stride", 0, env="FLYBRAIN_SYNAPSE_STRIDE")) or (1 if device.type == "cuda" else 8)
         print(f"[flybrain] loading connectome from {data_dir} on {device} (stride {stride}) ...")
         RealFlyBrain = _extract_class()
         conn, neurons, pr, dn, motion, n = build_connectome(data_dir, stride, device)
         print(f"[flybrain] {n:,} neurons, {conn._nnz():,} connections")
         upstream = RealFlyBrain(conn, neurons, pr, dn, motion, n, device, substeps=substeps)
-        model = os.environ.get("FLYBRAIN_MODEL", "corrected")
+        model = get("flybrain.model", "corrected", env="FLYBRAIN_MODEL")
         brain = CorrectedLIF(upstream, substeps) if model == "corrected" else upstream
         print(f"[flybrain] neuron model: {'corrected LIF (tau_m 20 ms)' if model == 'corrected' else 'upstream RealFlyBrain'}")
         adapter = cls(brain, neurons)

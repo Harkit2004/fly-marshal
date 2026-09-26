@@ -4,32 +4,37 @@
 //    edge lines, kerbs and run-off in corners, sponsor boards, start gantry, grandstand, trees.
 //  - Cars and drones are interpolated between telemetry ticks and animated (wheels, rotors,
 //    drone pitch/roll, LEDs). Procedural models by default; glTF models from
-//    assets/models/models.json replace them (see assets/models/README.md).
+//    settings.toml [models] / [tracks] replace them (see assets/models/README.md).
 //  - Every drone carries a gimbal camera. Live feeds show as tiles; click one to fly it.
 //    In drone cam: drag = pan/tilt the gimbal, wheel = zoom, double-click = back to auto-track.
 //  - Camera modes: orbit, chase (orbit around the selected drone), drone cam, TV (nearest
 //    trackside camera zooms on the action), incident.
 //
-// AC and Three.js are both y-up. If the track looks mirrored against the 2D map, set MIRROR_Z.
+// AC and Three.js are both y-up. If the track looks mirrored against the 2D map, set
+// scene.mirror_z in settings.toml. All sizes below come from settings.toml [scene] / [models] /
+// [tracks], delivered inside the "track" message; these are only the defaults.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 
-const MIRROR_Z = false;
 const DEFAULT_HALF_WIDTH = 6;
-const BOARD_GAP = 4;               // m between track edge and sponsor boards
-const BOARD_HEIGHT = 1.2;
-const PANEL_LEN = 14;
-const DRONE_SCALE = 3;             // drones are tiny at track scale; exaggerate for visibility
-const CAR_SCALE = 1.4;
-const KERB_RADIUS = 220;           // m; tighter than this gets kerbs + run-off
-const TV_SPACING = 380;            // m between trackside TV cameras
+const CFG = {
+  mirror_z: false,
+  board_gap_m: 4,           // between track edge and sponsor boards
+  board_height_m: 1.2,
+  panel_length_m: 14,
+  drone_scale: 3,           // drones are tiny at track scale; exaggerate for visibility
+  car_scale: 1.4,
+  kerb_radius_m: 220,       // tighter than this gets kerbs + run-off
+  tv_camera_spacing_m: 380,
+  terrain_detail: 220,
+};
 const SPONSOR_DIR = "assets/sponsors/";
 const MODEL_DIR = "assets/models/";
 
-const Z = (z) => (MIRROR_Z ? -z : z);
+const Z = (z) => (CFG.mirror_z ? -z : z);
 const V = (x, y, z) => new THREE.Vector3(x, y, Z(z));
 const lerpAngle = (a, b, t) => a + (((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -72,9 +77,8 @@ function sponsorTexture(s, img, w, h) {
   return t;
 }
 
-async function loadModels() {
-  let cfg = {};
-  try { cfg = await (await fetch(MODEL_DIR + "models.json")).json(); } catch { return {}; }
+// cfg = settings.toml [models] (car, drone) + [tracks]; entries without a file use procedural models
+async function loadModels(cfg = {}) {
   const loader = new GLTFLoader();
   const load = async (entry) => {
     if (!entry?.file) return null;
@@ -83,9 +87,42 @@ async function loadModels() {
       return { ...entry, scene: g.scene, animations: g.animations };
     } catch (e) { console.warn("model failed", entry.file, e); return null; }
   };
-  const tracks = {};
-  for (const [id, entry] of Object.entries(cfg.tracks || {})) tracks[id] = entry;   // loaded on demand
-  return { car: await load(cfg.car), drone: await load(cfg.drone), tracks, load };
+  const m = cfg.models || {};
+  return { car: await load(m.car), drone: await load(m.drone), tracks: cfg.tracks || {}, load };
+}
+
+// all sponsors side by side in one texture, so a barrier can be one continuous mesh
+function sponsorAtlas(sponsors) {
+  const W = 512, H = 64, n = sponsors.length;
+  const c = document.createElement("canvas"); c.width = W * n; c.height = H;
+  const g = c.getContext("2d");
+  sponsors.forEach((s, i) => {
+    g.drawImage(s.board.image, i * W, 0, W, H);
+    g.fillStyle = "rgba(0,0,0,.35)"; g.fillRect(i * W, 0, 3, H);          // panel seams
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8;
+  return t;
+}
+
+// ground height: follows the track's elevation near the track and relaxes to a smooth
+// average away from it, so the circuit sits on the landscape instead of floating over a plane
+function heightField(fr) {
+  const pts = [];
+  for (let i = 0; i < fr.length; i += 4) pts.push(fr[i].p);
+  const mean = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+  return (x, z) => {
+    let dmin = Infinity, ynear = mean, wsum = 1e-9, ysum = 0;
+    for (const p of pts) {
+      const d2 = (p.x - x) ** 2 + (p.z - z) ** 2;
+      if (d2 < dmin) { dmin = d2; ynear = p.y; }
+      const w = 1 / (d2 + 400) ** 1.5;
+      wsum += w; ysum += w * p.y;
+    }
+    const d = Math.sqrt(dmin), far = ysum / wsum;
+    const t = clamp((d - 25) / 250, 0, 1), k = t * t * (3 - 2 * t);
+    return { y: ynear + (far - ynear) * k, d };
+  };
 }
 
 function canvasTexture(w, h, draw, repeat) {
@@ -157,7 +194,7 @@ export class View3D {
     this.drones = new Map();
     this.markers = new Map();
     this.tvCams = [];
-    this.ready = Promise.all([loadSponsors(), loadModels()]).then(([s, m]) => { this.sponsors = s; this.models = m; });
+    this.ready = loadSponsors().then((s) => { this.sponsors = s; });
     this.bindPointer();
     this.resize();
   }
@@ -173,6 +210,13 @@ export class View3D {
   // ---------- track ----------
   async setTrack(track) {
     await this.ready;
+    const st = track.settings || {};
+    Object.assign(CFG, st.scene || {});
+    this.models = await loadModels(st);
+    // anything built before the models arrived is rebuilt with them
+    for (const c of this.cars.values()) this.scene.remove(c.mesh);
+    for (const d of this.drones.values()) this.scene.remove(d.mesh);
+    this.cars.clear(); this.drones.clear();
     if (this.trackGroup) this.scene.remove(this.trackGroup);
     const g = (this.trackGroup = new THREE.Group());
     const cl = track.centerline, fr = (this.frames = trackFrames(cl, track.widths)), n = fr.length;
@@ -182,16 +226,36 @@ export class View3D {
 
     // grass with a little noise
     const grass = canvasTexture(256, 256, (c, w, h) => {
-      c.fillStyle = "#5b7d45"; c.fillRect(0, 0, w, h);
-      for (let i = 0; i < 5000; i++) {
-        c.fillStyle = `rgba(${40 + Math.random() * 60},${90 + Math.random() * 60},${30 + Math.random() * 40},0.35)`;
-        c.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+      c.fillStyle = "#d8e6c8"; c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 6000; i++) {
+        const v = 170 + Math.random() * 80;
+        c.fillStyle = `rgba(${v * 0.85},${v},${v * 0.7},0.5)`;
+        c.fillRect(Math.random() * w, Math.random() * h, 2, 3);
       }
-    }, 400);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000), new THREE.MeshLambertMaterial({ map: grass }));
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = this.minY - 0.8;
+    }, 1);
+    const hf = (this.height = heightField(fr));
+    const xs0 = fr.map((f) => f.p.x), zs0 = fr.map((f) => f.p.z), M = 900;
+    const [gx0, gx1, gz0, gz1] = [Math.min(...xs0) - M, Math.max(...xs0) + M, Math.min(...zs0) - M, Math.max(...zs0) + M];
+    const cx = (gx0 + gx1) / 2, cz = (gz0 + gz1) / 2;
+    const terr = new THREE.PlaneGeometry(gx1 - gx0, gz1 - gz0, CFG.terrain_detail, CFG.terrain_detail);
+    terr.rotateX(-Math.PI / 2);
+    const tp = terr.attributes.position, tcol = [];
+    for (let i = 0; i < tp.count; i++) {
+      const x = tp.getX(i) + cx, z = tp.getZ(i) + cz, h = hf(x, z);
+      // well under the road right at the track (the verges bridge the gap), flush further out
+      tp.setXYZ(i, x, h.y - (h.d < 30 ? 1.2 : 0.4), z);
+      const v = 0.85 + 0.15 * Math.sin(x * 0.013) * Math.cos(z * 0.011) + (Math.random() - 0.5) * 0.06;
+      tcol.push(0.42 * v, 0.58 * v, 0.32 * v);
+    }
+    terr.setAttribute("color", new THREE.Float32BufferAttribute(tcol, 3));
+    terr.computeVertexNormals();
+    grass.repeat.set((gx1 - gx0) / 25, (gz1 - gz0) / 25);
+    grass.anisotropy = 8;
+    const ground = new THREE.Mesh(terr, new THREE.MeshLambertMaterial({ map: grass, vertexColors: true }));
     g.add(ground);
+    const skirt = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.MeshLambertMaterial({ color: 0x4f6b3e }));
+    skirt.rotation.x = -Math.PI / 2; skirt.position.set(cx, this.minY - 40, cz);
+    g.add(skirt);
 
     const edge = (f, side, extra) => {        // point on the left (+1) / right (-1) edge
       const w = (side > 0 ? f.wl : f.wr) + extra;
@@ -222,10 +286,25 @@ export class View3D {
     });
     const road = strip(fr.map((f) => [edge(f, 1, 0), edge(f, -1, 0)]), 0x3b3f42, 0.05);
     road.material.map = asphalt; road.material.color.set(0xffffff);
-    const uv = []; fr.forEach((f, i) => uv.push(0, i * 0.4, 1, i * 0.4));
+    const uv = []; let acc = 0;
+    fr.forEach((f, i) => { if (i) acc += f.p.distanceTo(fr[i - 1].p); uv.push(0, acc / 8, 1, acc / 8); });
     road.geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     asphalt.wrapS = asphalt.wrapT = THREE.RepeatWrapping;
     g.add(road);
+    // grass verges: from the track edge down to the terrain, so the road never floats
+    const vergeMat = new THREE.MeshLambertMaterial({ color: 0x5d7f47, side: THREE.DoubleSide });
+    for (const side of [1, -1]) {
+      const pos = [], idx = [];
+      fr.forEach((f) => {
+        const a = edge(f, side, 0), b = edge(f, side, 16);
+        pos.push(a.x, a.y, a.z, b.x, b.y - 1.6, b.z);
+      });
+      for (let i = 0; i < n; i++) { const a = 2 * i, b = 2 * ((i + 1) % n); idx.push(a, b, a + 1, a + 1, b, b + 1); }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setIndex(idx); geo.computeVertexNormals();
+      g.add(new THREE.Mesh(geo, vergeMat));
+    }
     this.proceduralTrack = [ground, road];
     for (const side of [1, -1]) {
       const line = strip(fr.map((f) => [edge(f, side, -0.6), edge(f, side, -0.3)]), 0xf2f2f2, 0.08);
@@ -233,7 +312,7 @@ export class View3D {
     }
 
     // kerbs + run-off where the corner is tight
-    const corner = fr.map((f) => Math.abs(f.k) > 1 / KERB_RADIUS);
+    const corner = fr.map((f) => Math.abs(f.k) > 1 / CFG.kerb_radius_m);
     const grow = corner.map((c, i) => c || corner[(i + 3) % n] || corner[(i - 3 + n) % n]);
     const red = new THREE.Color(0xd12b2b), white = new THREE.Color(0xf4f4f4), sand = new THREE.Color(0xc9b27c);
     for (const side of [1, -1]) {
@@ -252,27 +331,51 @@ export class View3D {
       flush();
     }
 
-    // sponsor boards on both sides
-    const step = Math.max(1, Math.round((PANEL_LEN / track.length_m) * n));
-    const boardMats = this.sponsors.map((s) => new THREE.MeshBasicMaterial({ map: s.board, side: THREE.DoubleSide }));
-    const postMat = new THREE.MeshLambertMaterial({ color: 0x9aa3a8 });
-    let k = 0;
-    for (let i = 0; i < n; i += step) {
-      const a = fr[i], b = fr[(i + step) % n];
-      for (const side of [1, -1]) {
-        const extra = BOARD_GAP + (grow[i] ? 9 : 0);
-        const pa = edge(a, side, extra), pb = edge(b, side, extra);
-        const len = pa.distanceTo(pb);
-        if (len < 1 || len > PANEL_LEN * 3) continue;
-        const board = new THREE.Mesh(new THREE.PlaneGeometry(len, BOARD_HEIGHT), boardMats[k % boardMats.length]);
-        board.position.copy(pa).lerp(pb, 0.5).add(new THREE.Vector3(0, BOARD_HEIGHT / 2 + 0.2, 0));
-        board.rotation.y = -Math.atan2(pb.z - pa.z, pb.x - pa.x);
-        const post = new THREE.Mesh(new THREE.BoxGeometry(0.15, BOARD_HEIGHT + 0.3, 0.15), postMat);
-        post.position.copy(pa).add(new THREE.Vector3(0, (BOARD_HEIGHT + 0.3) / 2, 0));
-        g.add(board, post);
-        k++;
+    // sponsor boards: one continuous barrier per side, pushed back behind run-off in corners
+    // (smoothly), and left out on the inside of corners too tight for the offset to stay clean
+    const atlas = sponsorAtlas(this.sponsors);
+    const nS = this.sponsors.length;
+    const frontMat = new THREE.MeshBasicMaterial({ map: atlas, side: THREE.DoubleSide });
+    const backMat = new THREE.MeshLambertMaterial({ color: 0x3b4146, side: THREE.DoubleSide });
+    const raw = grow.map((c) => (c ? 10 : 0));
+    const smooth = raw.map((_, i) => { let a = 0; for (let j = -12; j <= 12; j++) a += raw[(i + j + n) % n]; return a / 25; });
+    for (const side of [1, -1]) {
+      let run = [];
+      const flush = () => {
+        if (run.length > 3) {
+          const pos = [], back = [], uvs = [], idx = [];
+          let dist = 0, prev = null;
+          run.forEach((i) => {
+            const extra = CFG.board_gap_m + smooth[i];
+            const p = edge(fr[i], side, extra), q = edge(fr[i], side, extra + 0.25);
+            if (prev) dist += p.distanceTo(prev);
+            prev = p;
+            const y0 = p.y + 0.15, y1 = y0 + CFG.board_height_m;
+            pos.push(p.x, y0, p.z, p.x, y1, p.z);
+            back.push(q.x, y0, q.z, q.x, y1, q.z);
+            // text must read left-to-right from the track: flip it on the side whose normal faces away
+            const u = (side > 0 ? -dist : dist) / (CFG.panel_length_m * nS);
+            uvs.push(u, 0, u, 1);
+          });
+          for (let j = 0; j < run.length - 1; j++) { const a = 2 * j, b = a + 2; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+          for (const [arr, mat] of [[pos, frontMat], [back, backMat]]) {
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+            if (mat === frontMat) geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+            geo.setIndex(idx); geo.computeVertexNormals();
+            g.add(new THREE.Mesh(geo, mat));
+          }
+        }
+        run = [];
+      };
+      for (let i = 0; i < n; i++) {
+        const extra = CFG.board_gap_m + smooth[i] + (side > 0 ? fr[i].wl : fr[i].wr);
+        const inside = Math.sign(fr[i].k) === side;          // curving towards this side
+        if (inside && Math.abs(fr[i].k) * extra > 0.35) flush(); else run.push(i);
       }
+      flush();
     }
+    const postMat = new THREE.MeshLambertMaterial({ color: 0x9aa3a8 });
 
     // start/finish: chequered line, gantry with the first sponsor, grandstand
     const f0 = fr[0];
@@ -323,9 +426,9 @@ export class View3D {
     let placed = 0;
     for (let tries = 0; tries < 6000 && placed < 900; tries++) {
       const x = x0 + Math.random() * (x1 - x0), z = z0 + Math.random() * (z1 - z0);
-      let dmin = Infinity, py = this.minY;
-      for (const p of far) { const d = (p.x - x) ** 2 + (p.z - z) ** 2; if (d < dmin) { dmin = d; py = p.y; } }
-      if (dmin < 45 * 45) continue;
+      const h = hf(x, z);
+      if (h.d < 45) continue;
+      const py = h.y + 0.4;
       const s = 0.7 + Math.random() * 0.8;
       sc.set(s, s, s);
       m4.compose(new THREE.Vector3(x, py - 0.8 + 2 * s, z), q, sc); trunks.setMatrixAt(placed, m4);
@@ -337,7 +440,7 @@ export class View3D {
 
     // trackside TV cameras
     this.tvCams = [];
-    const tvStep = Math.max(1, Math.round((TV_SPACING / track.length_m) * n));
+    const tvStep = Math.max(1, Math.round((CFG.tv_camera_spacing_m / track.length_m) * n));
     for (let i = 0; i < n; i += tvStep) this.tvCams.push(edge(fr[i], (i / tvStep) % 2 ? 1 : -1, 28).add(new THREE.Vector3(0, 9, 0)));
 
     this.scene.add(g);
@@ -398,7 +501,7 @@ export class View3D {
     const label = this.makeLabel(`#${id}`);
     label.position.y = 3.2;
     root.add(label);
-    root.scale.setScalar(CAR_SCALE);
+    root.scale.setScalar(CFG.car_scale);
     this.scene.add(root);
     return { mesh: root, wheels, label, yaw: 0 };
   }
@@ -454,7 +557,7 @@ export class View3D {
       new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }));
     cone.position.y = -5.2;
     root.add(cone);
-    root.scale.setScalar(DRONE_SCALE);
+    root.scale.setScalar(CFG.drone_scale);
     // own layer so its gimbal camera doesn't see its own body
     const layer = 1 + d.drone_id;
     root.traverse((o) => o.layers.set(layer));
@@ -589,7 +692,7 @@ export class View3D {
 
   aimGimbal(dr, d, dt) {
     const s = this.state;
-    const camPos = dr.mesh.position.clone().add(new THREE.Vector3(0, -0.6 * DRONE_SCALE, 0));
+    const camPos = dr.mesh.position.clone().add(new THREE.Vector3(0, -0.6 * CFG.drone_scale, 0));
     let look = null;
     const ev = d.event_id && s.events.get(d.event_id);
     if (ev) {
