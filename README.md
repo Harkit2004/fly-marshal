@@ -129,6 +129,18 @@ python brain.py --steer-assist 0.0          # raise it only if the fly can't tur
 - Without the synapse table, drone 0 flies with a placeholder steering reflex. The viewer then shows the brain dark and says no neural activity is shown. Nothing is simulated or invented.
 - The FlyWire data and the mesh (navis-flybrains, GPL-3.0) are downloaded, not committed.
 
+### Findings from running the real connectome (stride 8, i7-1255U CPU)
+
+| | Result |
+|---|---|
+| Load | 80.2M synapse rows → 10.0M edges (stride 8) → 5.77M connections, 126 s first time, then cached (`edges_stride8.npz`); ~0.8 GB RAM |
+| Speed | 4.4 s per control step (20 × 1 ms substeps) on CPU. Needs the RTX 3070 for anything near real time |
+| Upstream `RealFlyBrain` as-is | Silent with no input; **any** input drives it into the same saturated state (~32% of all neurons spiking every ms, matching its README's "35,000+ neurons per timestep"). Left, right and neutral targets give **identical** activity, and the turn output sits at −1.0, so it cannot steer. |
+| Likely cause | `tau_m = R_m * C_m = 10 × 2e-6 = 20 µs` with a 1 ms Euler step (50× too large): any small input is amplified ~49× per step until it spikes. Shiu et al. 2024 use τ_m = 20 ms. |
+| With τ_m = 20 ms (experiment) | Sparse, input-dependent activity (~6% active). Left target: left photoreceptors 167 Hz vs right 33 Hz; right target mirrored. Activity does not reach T4/T5 motion neurons or descending neurons with a constant optic-flow drive. |
+
+Takeaway: the real brain runs and its spikes are real, but connectome-only steering is not supported by the current model. Steering uses `--steer-assist`. Say that plainly in the pitch.
+
 ## Coordinates
 
 AC world coordinates, metres, `y` up. `track_pos` is AC's spline position (0–1). If the 3D view looks mirrored compared with the 2D map, set `MIRROR_Z = true` in `dashboard/view3d.js`.

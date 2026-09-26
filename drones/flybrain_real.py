@@ -80,14 +80,27 @@ def build_connectome(data_dir: Path, stride: int, device):
         pos = np.clip(np.searchsorted(sorted_ids, r), 0, n - 1)
         return np.where(sorted_ids[pos] == r, order[pos], -1)
 
-    pre_l, post_l, size_l = [], [], []
-    for pre_r, post_r, size in _synapse_chunks(data_dir):
-        if stride > 1:
-            pre_r, post_r, size = pre_r[::stride], post_r[::stride], size[::stride]
-        pre, post = to_idx(pre_r), to_idx(post_r)
-        ok = (pre >= 0) & (post >= 0)
-        pre_l.append(pre[ok].astype(np.int32)); post_l.append(post[ok].astype(np.int32)); size_l.append(size[ok])
-    pre, post, sizes = np.concatenate(pre_l), np.concatenate(post_l), np.concatenate(size_l)
+    # Parsing the 2.7 GB table takes minutes, so the mapped edges are cached per stride.
+    cache = data_dir / f"edges_stride{stride}.npz"
+    if cache.exists() and cache.stat().st_mtime > (data_dir / "fly_neurons_real.csv").stat().st_mtime:
+        z = np.load(cache)
+        pre, post, sizes = z["pre"], z["post"], z["size"]
+        print(f"[flybrain] edges from cache {cache.name}")
+    else:
+        pre_l, post_l, size_l = [], [], []
+        rows = 0
+        for pre_r, post_r, size in _synapse_chunks(data_dir):
+            rows += len(size)
+            if stride > 1:
+                pre_r, post_r, size = pre_r[::stride], post_r[::stride], size[::stride]
+            pre, post = to_idx(pre_r), to_idx(post_r)
+            ok = (pre >= 0) & (post >= 0)
+            pre_l.append(pre[ok].astype(np.int32)); post_l.append(post[ok].astype(np.int32)); size_l.append(size[ok])
+            print(f"[flybrain]   {rows / 1e6:6.1f}M synapse rows read", end=chr(13), flush=True)
+        print()
+        pre, post, sizes = np.concatenate(pre_l), np.concatenate(post_l), np.concatenate(size_l)
+        np.savez(cache, pre=pre, post=post, size=sizes)
+        print(f"[flybrain] cached {len(pre):,} edges -> {cache.name}")
     w = np.clip(sizes / (sizes.max() + 1e-6), 0.1, 2.0).astype(np.float32)
     w *= np.where(inhib[pre], -1.0, 1.0).astype(np.float32)
     idx = torch.from_numpy(np.stack([pre, post])).long().to(device)
@@ -146,7 +159,9 @@ class RealFlyBrainAdapter:
         RealFlyBrain = _extract_class()
         conn, neurons, pr, dn, motion, n = build_connectome(data_dir, stride, device)
         print(f"[flybrain] {n:,} neurons, {conn._nnz():,} connections")
-        return cls(RealFlyBrain(conn, neurons, pr, dn, motion, n, device, substeps=substeps), neurons)
+        adapter = cls(RealFlyBrain(conn, neurons, pr, dn, motion, n, device, substeps=substeps), neurons)
+        adapter.stride = stride
+        return adapter
 
     def step(self, flow: list[float]) -> dict:
         import torch
@@ -158,6 +173,7 @@ class RealFlyBrainAdapter:
             "climb": motor["vertical"] / 100.0,
             "spikes": int(metrics["total_spikes"]),
             "source": "flywire",
+            "synapse_stride": getattr(self, "stride", 1),
         }
         if self.sample is not None:
             hit = self.fired_acc[self.sample] & self.sample_ok
