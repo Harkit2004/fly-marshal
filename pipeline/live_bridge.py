@@ -59,6 +59,7 @@ class LogTail:
         self.pending: dict[int, list] = {}                     # t_ms -> cars (current, incomplete tick)
         self.frames: deque = deque()                           # (t_s, cars)
         self.meta: dict = {}
+        self.session = 0
 
     def find_session(self) -> bool:
         ptr = self.logs_dir / "_active_recording.txt"
@@ -70,6 +71,8 @@ class LogTail:
             self.parts_dir, self.next_part = parts, 1
             self.drivers, self.slow, self.pending = {}, {}, {}
             self.frames.clear()
+            self.meta = {}
+            self.session += 1            # main loop rebuilds the track for the new session
         return parts.exists()
 
     def poll(self) -> int:
@@ -194,10 +197,16 @@ async def main():
         if not (logs / "_active_recording.txt").exists():
             print("[live] no active recording yet: start a session in AC with the VRC Race Logger app enabled")
         clock0 = None                      # (session_t, wall) anchor for smooth playout
+        session = 0
         while True:
             if not tail.find_session():
                 await asyncio.sleep(1.0)
                 continue
+            if tail.session != session:    # new AC session (maybe a different track): start over
+                if session:
+                    print("[live] new session: rebuilding the track")
+                    track = TrackBuilder(args.reference, args.ac_root, args.track_source)
+                session, clock0 = tail.session, None
             if tail.poll() and clock0 is None and tail.frames:
                 newest = tail.frames[-1][0]
                 clock0 = (newest - args.delay, time.perf_counter())
