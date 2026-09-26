@@ -139,7 +139,11 @@ python brain.py --steer-assist 0.0          # raise it only if the fly can't tur
 | Likely cause | `tau_m = R_m * C_m = 10 × 2e-6 = 20 µs` with a 1 ms Euler step (50× too large): any small input is amplified ~49× per step until it spikes. Shiu et al. 2024 use τ_m = 20 ms. |
 | With τ_m = 20 ms (experiment) | Sparse, input-dependent activity (~6% active). Left target: left photoreceptors 167 Hz vs right 33 Hz; right target mirrored. Activity does not reach T4/T5 motion neurons or descending neurons with a constant optic-flow drive. |
 
-Takeaway: the real brain runs and its spikes are real, but connectome-only steering is not supported by the current model. Steering uses `--steer-assist`. Say that plainly in the pitch.
+Takeaway: the real brain runs and its spikes are real, but connectome-only steering is not supported by the current model.
+
+**What runs now (default `FLYBRAIN_MODEL=corrected`):** `CorrectedLIF` in `drones/flybrain_real.py` uses the same connectome and neuron pools with τm = 20 ms. Measured: target left → turn +0.50, right → −0.50, ahead → 0.00. About 850 spikes/ms instead of ~44,000. Heading is read from the simulated photoreceptors' left/right firing. Descending neurons stay silent with this input, so forward speed and altitude are flown by plain beacon control, and the dashboard labels them "assisted". `FLYBRAIN_MODEL=upstream` runs the original for comparison.
+
+Pitch line: "A real FlyWire fly brain runs live and sees which side the incident is on; the drone's heading follows its photoreceptors, speed and altitude are assisted."
 
 ## Coordinates
 

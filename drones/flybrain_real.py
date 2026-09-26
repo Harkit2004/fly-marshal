@@ -108,6 +108,79 @@ def build_connectome(data_dir: Path, stride: int, device):
     return conn, neurons, pr, dn, motion, n
 
 
+class CorrectedLIF:
+    """Leaky integrate-and-fire dynamics with the published Shiu et al. (2024) time constants,
+    run on RealFlyBrain's own connectome tensor and neuron pools.
+
+    Why: upstream RealFlyBrain uses tau_m = R_m*C_m = 10 * 2e-6 = 20 us with a 1 ms Euler step,
+    so any input is amplified ~49x per step and the whole brain saturates identically for every
+    input (see README findings). Here tau_m = 20 ms, tau_syn = 5 ms, and synaptic input is a
+    voltage-like conductance g that each presynaptic spike bumps by W_SYN_MV * weight.
+
+    Inputs follow upstream: forward -> all R1-6, left -> left R1-6, right -> right R1-6,
+    vertical -> R7/R8 (left/right are anatomical because fly_neurons_real.csv is ordered by side).
+    Readout: turn = left/right imbalance of simulated R1-6 firing. Forward and climb come from
+    descending-neuron firing when it is active; otherwise they are marked as assisted.
+    """
+
+    TAU_M, TAU_SYN, DT = 0.020, 0.005, 1e-3
+    W_SYN_MV = 0.275            # mV per unit synaptic weight (Shiu et al. use 0.275 mV per synapse)
+    DRIVE_MV = 20.0             # photoreceptor drive at full optic-flow input
+
+    def __init__(self, upstream, substeps: int = 20):
+        import math
+        import torch
+        self.u = upstream
+        self.device, self.n_neurons = upstream.device, upstream.n_neurons
+        self.substeps = substeps
+        self.decay = math.exp(-self.DT / self.TAU_SYN)
+        self.torch = torch
+        self.spikes = torch.zeros(self.n_neurons, dtype=torch.bool, device=self.device)
+        self.reset_state()
+
+    def reset_state(self):
+        t = self.torch
+        u = self.u
+        self.v = t.full((self.n_neurons,), u.V_rest, device=self.device)
+        self.g = t.zeros(self.n_neurons, device=self.device)
+        self.ref = t.zeros(self.n_neurons, device=self.device)
+        self.spikes = t.zeros(self.n_neurons, dtype=t.bool, device=self.device)
+
+    def _step(self, drive):
+        u = self.u
+        self.ref = (self.ref - self.DT).clamp(min=0)
+        syn = self.torch.sparse.mm(u.conn_T, self.spikes.float().unsqueeze(1)).squeeze()
+        self.g = self.g * self.decay + syn * (self.W_SYN_MV * 1e-3)
+        self.v = self.v + (u.V_rest - self.v + self.g + drive) * (self.DT / self.TAU_M)
+        self.spikes = (self.v > u.V_thresh) & (self.ref <= 0)
+        self.v[self.spikes] = u.V_rest
+        self.ref[self.spikes] = u.tau_ref
+
+    def compute(self, optic_flow):
+        t, u = self.torch, self.u
+        f = t.as_tensor(optic_flow, dtype=t.float32, device=self.device)
+        mv = self.DRIVE_MV * 1e-3
+        drive = t.zeros(self.n_neurons, device=self.device)
+        drive[u.r16_idx] += f[0] * mv
+        drive[u.r16_left_idx] += f[1] * mv
+        drive[u.r16_right_idx] += f[2] * mv
+        drive[u.r78_idx] += f[3] * mv
+        count = t.zeros(self.n_neurons, device=self.device)
+        for _ in range(self.substeps):
+            self._step(drive)
+            count += self.spikes.float()
+        rate = count / (self.substeps * self.DT)                     # Hz
+        rl, rr = rate[u.r16_left_idx].mean().item(), rate[u.r16_right_idx].mean().item()
+        dn = rate[u.dn_indices].mean().item() if len(u.dn_indices) else 0.0
+        motor = {"turn": (rl - rr) / (rl + rr + 1e-6)}
+        if dn > 1.0:                                                 # descending neurons active
+            motor["forward"] = min(1.0, dn / 100.0)
+            motor["climb"] = max(-1.0, min(1.0, dn / 100.0 - 0.5))
+        metrics = {"total_spikes": count.sum().item() / self.substeps, "dn_hz": dn,
+                   "photo_l_hz": rl, "photo_r_hz": rr}
+        return motor, metrics
+
+
 class RealFlyBrainAdapter:
     """Maps RealFlyBrain's Tello RC output (-100..100) onto our forward/turn/climb, and reports which
     of the viewer's real FlyWire neurons spiked during the step."""
@@ -115,7 +188,7 @@ class RealFlyBrainAdapter:
     def __init__(self, brain, neurons=None):
         import torch
         self.brain = brain
-        b = brain
+        b = brain            # RealFlyBrain or CorrectedLIF; both expose _step, spikes, compute
         self.fired_acc = torch.zeros(b.n_neurons, dtype=torch.bool, device=b.device)
         orig_step = b._step
 
@@ -159,20 +232,29 @@ class RealFlyBrainAdapter:
         RealFlyBrain = _extract_class()
         conn, neurons, pr, dn, motion, n = build_connectome(data_dir, stride, device)
         print(f"[flybrain] {n:,} neurons, {conn._nnz():,} connections")
-        adapter = cls(RealFlyBrain(conn, neurons, pr, dn, motion, n, device, substeps=substeps), neurons)
-        adapter.stride = stride
+        upstream = RealFlyBrain(conn, neurons, pr, dn, motion, n, device, substeps=substeps)
+        model = os.environ.get("FLYBRAIN_MODEL", "corrected")
+        brain = CorrectedLIF(upstream, substeps) if model == "corrected" else upstream
+        print(f"[flybrain] neuron model: {'corrected LIF (tau_m 20 ms)' if model == 'corrected' else 'upstream RealFlyBrain'}")
+        adapter = cls(brain, neurons)
+        adapter.stride, adapter.model = stride, model
         return adapter
 
     def step(self, flow: list[float]) -> dict:
         import torch
         self.fired_acc.zero_()
         motor, metrics = self.brain.compute(np.clip(np.asarray(flow, dtype=np.float32), 0, 1))
+        if "yaw" in motor:                                     # upstream RealFlyBrain (Tello RC units)
+            motor = {"forward": max(0.0, motor["forward"] / 100.0), "turn": motor["yaw"] / 100.0,
+                     "climb": motor["vertical"] / 100.0}
         out = {
-            "forward": max(0.0, motor["forward"] / 100.0),
-            "turn": motor["yaw"] / 100.0,
-            "climb": motor["vertical"] / 100.0,
+            "turn": float(motor["turn"]),
+            "forward": float(motor.get("forward", 0.0)),
+            "climb": float(motor.get("climb", 0.0)),
+            "assisted": [k for k in ("forward", "climb") if k not in motor],
             "spikes": int(metrics["total_spikes"]),
             "source": "flywire",
+            "model": getattr(self, "model", "upstream"),
             "synapse_stride": getattr(self, "stride", 1),
         }
         if self.sample is not None:

@@ -119,6 +119,14 @@ class FlyBrainPilot:
                 self.out = self.brain.step(self.beacon_flow(d, target))
         o = self.out
         turn = o["turn"]
+        assisted = o.get("assisted", [])
+        if assisted:                          # channels the brain doesn't drive: plain beacon control
+            fwd, _, _, vert = self.beacon_flow(d, target)
+            o = dict(o)
+            if "forward" in assisted:
+                o["forward"] = fwd
+            if "climb" in assisted:
+                o["climb"] = float(np.tanh(2.0 * vert))
         if self.steer_assist > 0:
             rel = target - d.pos
             bearing = (math.atan2(rel[2], rel[0]) - d.yaw + math.pi) % (2 * math.pi) - math.pi
