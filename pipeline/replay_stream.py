@@ -38,6 +38,7 @@ def track_message(session: Path) -> str:
     seg = ((cl[["x", "z"]].diff().fillna(0) ** 2).sum(axis=1) ** 0.5).sum()
     msg = {
         "type": "track",
+        "source": "replay",
         "track_id": meta.get("track") or session.name,
         "length_m": float(seg),
         "centerline": cl[["track_pos", "x", "y", "z", "typical_speed_kmh"]]

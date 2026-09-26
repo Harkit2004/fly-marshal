@@ -14,7 +14,26 @@ export const state = {
   report: null,
 };
 const ui = { labels: true, feeds: true, tiles: document.getElementById("tiles") };
+const gameFrames = new Map();
+const escapeHTML = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
+
+function updateGameTiles() {
+  const now = performance.now();
+  for (const tile of ui.tiles.querySelectorAll('[data-drone]')) {
+    const frame = gameFrames.get(+tile.dataset.drone);
+    const fresh = frame && now < frame.expires;
+    const img = tile.querySelector('.game-frame');
+    const badge = tile.querySelector('.source');
+    if (!img || !badge) continue;
+    if (fresh && img.getAttribute('src') !== frame.image) img.src = frame.image;
+    img.hidden = !fresh;
+    tile.dataset.source = fresh ? 'game' : '3d';
+    badge.textContent = fresh ? 'GAME' : '3D';
+  }
+}
+setInterval(updateGameTiles, 100); // expire even when telemetry or brain stops
 let view3d = null, flyBrain = null;
+let sideDirty = false, alertsDirty = false, reportDirty = false;
 
 // ---------- websockets ----------
 function connect(url, dotId, onMsg) {
@@ -30,8 +49,28 @@ function connect(url, dotId, onMsg) {
 
 const ema = (old, v) => (old ? old * 0.8 + v * 0.2 : v);
 
+function resetSession(sessionId) {
+  state.sessionId = sessionId;
+  state.track = null; state.t = 0;
+  state.cars.clear(); state.prevCars.clear();
+  state.drones = []; state.prevDrones.clear();
+  state.events.clear(); state.eventKey = ''; state.report = null;
+  state.frameAt = 0; state.dronesAt = 0;
+  gameFrames.clear();
+  ui.tiles.replaceChildren();
+  document.querySelectorAll('[data-drone]').forEach(e => e.remove());
+  document.getElementById('report').textContent = 'Waiting for the new session…';
+  view3d?.resetSession();
+  flyBrain?.fire([]);
+  document.getElementById('spikes').textContent = '0';
+  document.getElementById('fly-kind').textContent = 'Waiting for the new session…';
+  for (const k of ['forward', 'turn', 'climb']) document.getElementById('b-' + k).style.width = '0%';
+  renderAlerts(); renderSide();
+}
+
 connect(TEL_URL, "conn-tel", (m) => {
-  if (m.type === "track") { state.track = m; fitMap(); view3d?.setTrack(m); }
+  if (m.type === 'session_reset') resetSession(m.session_id);
+  else if (m.type === "track") { resetSession(m.session_id); state.track = m; fitMap(); view3d?.setTrack(m); }
   else if (m.type === "frames") {
     const now = performance.now();
     state.frameDt = Math.min(250, ema(state.frameDt, now - state.frameAt));
@@ -43,6 +82,19 @@ connect(TEL_URL, "conn-tel", (m) => {
 });
 
 connect(BRAIN_URL, "conn-brain", (m) => {
+  if (m.session_id != null && m.session_id !== state.sessionId) return;
+  if (m.type === 'game_frames_reset') {
+    gameFrames.clear(); state.report = null;
+    document.getElementById('report').textContent = 'Waiting for incident report';
+    updateGameTiles();
+  }
+  else if (m.type === 'game_frames') {
+    for (const f of m.frames || []) {
+      if (f.source !== 'game' || !Number.isInteger(f.drone_id) || !f.image?.startsWith('data:image/jpeg;base64,')) continue;
+      gameFrames.set(f.drone_id, {image: f.image, expires: performance.now() + Math.max(0, 2 - f.age_s) * 1000});
+    }
+    updateGameTiles();
+  }
   if (m.type === "drones") {
     const now = performance.now();
     state.dronesDt = Math.min(250, ema(state.dronesDt, now - state.dronesAt));
@@ -177,7 +229,7 @@ function syncTiles() {
     if (!ui.tiles.querySelector(`[data-drone="${d.drone_id}"]`)) {
       const tile = document.createElement("div");
       tile.className = "tile"; tile.dataset.drone = d.drone_id;
-      tile.innerHTML = `<div class="feed"></div><div class="tag"><span class="rec">●</span><span class="name"></span><span class="mode"></span></div>`;
+      tile.innerHTML = `<div class="feed"><img class="game-frame" alt="AC game camera" hidden></div><div class="tag"><span class="source">3D</span><span class="name"></span><span class="mode"></span></div>`;
       tile.onclick = () => { selectDrone(d.drone_id); setCam("drone"); };
       ui.tiles.appendChild(tile);
       const b = document.createElement("button");
@@ -211,7 +263,8 @@ function updateHud() {
 }
 
 // ---------- side panels ----------
-function renderAlerts() {
+function renderAlerts() { alertsDirty = true; }
+function paintAlerts() {
   const ul = document.getElementById("alerts");
   const evs = [...state.events.values()].sort((a, b) => (a.type === "incident" ? -1 : 1) - (b.type === "incident" ? -1 : 1) || b.t - a.t);
   ul.innerHTML = evs.length ? "" : '<li class="empty">No active events</li>';
@@ -224,22 +277,25 @@ function renderAlerts() {
   }
 }
 
-function renderReport() {
+function renderReport() { reportDirty = true; }
+function paintReport() {
   const r = state.report, el = document.getElementById("report");
   if (!r) return;
   el.classList.remove("empty");
   const chip = (bad, label) => `<span class="chip ${bad ? "bad" : ""}">${label}</span>`;
   // debris / smoke come only from the vision report; null means nobody has looked yet
   const seen = (v, what) => v == null ? `<span class="chip unknown" title="needs the drone camera + vision model">${what}: ?</span>` : chip(v, v ? what : `no ${what}`);
-  el.innerHTML = `<div class="sum">${r.summary}</div><div class="chips">` +
-    chip(r.stopped, r.stopped ? "stationary" : "moving") +
-    chip(r.on_racing_line, r.on_racing_line ? "on racing line" : "off line") +
+  el.innerHTML = `<div class="sum">${escapeHTML(r.summary)}</div><div class="chips">` +
+    (r.stopped == null ? seen(null, "stopped") : chip(r.stopped, r.stopped ? "stationary" : "moving")) +
+    (r.on_racing_line == null ? seen(null, "racing line") : chip(r.on_racing_line, r.on_racing_line ? "on racing line" : "off line")) +
     seen(r.debris, "debris") + seen(r.smoke, "smoke") +
+    seen(r.driver_out, "driver out") + seen(r.blocking, "blocking") +
     (r.cars_approaching_s != null ? chip(r.cars_approaching_s < 5, `next car ${r.cars_approaching_s}s`) : "") +
-    `</div>` + (r.frame_path ? `<img src="${r.frame_path}" alt="drone view" style="margin-top:8px;border-radius:6px">` : "");
+    `</div>` + (r.source === 'game_vision' && r.frame_path?.startsWith('data:image/jpeg;base64,') ? `<img src="${escapeHTML(r.frame_path)}" alt="Game frame assessed for this report" style="margin-top:8px;border-radius:6px;max-width:100%">` : "");
 }
 
-function renderSide() {
+function renderSide() { sideDirty = true; }
+function paintSide() {
   const ul = document.getElementById("drones");
   ul.innerHTML = "";
   for (const d of state.drones) {
@@ -321,12 +377,24 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "c") setCam(CAMS[(CAMS.indexOf(view3d.camMode) + 1) % CAMS.length]);
 });
 
+let lastPaint = 0, lastPanelPaint = 0;
 function loop(now) {
+  requestAnimationFrame(loop);
+  const fps = Math.max(10, Math.min(60, state.track?.settings?.scene?.dashboard_fps || 30));
+  if (document.hidden || now - lastPaint < 1000 / fps) return;
+  const elapsed = Math.min(0.2, (now - lastPaint) / 1000);
+  lastPaint = now - ((now - lastPaint) % (1000 / fps));
+  if (now - lastPanelPaint >= 100) {
+    if (sideDirty) { paintSide(); sideDirty = false; }
+    if (alertsDirty) { paintAlerts(); alertsDirty = false; }
+    if (reportDirty) { paintReport(); reportDirty = false; }
+    lastPanelPaint = now;
+  }
   document.getElementById("clock").textContent = `t = ${state.t.toFixed(1)} s`;
   if (!canvas.hidden) draw2d(now);
   else if (view3d) { view3d.update(); drawMinimap(); updateHud(); }
-  flyBrain?.update();
-  requestAnimationFrame(loop);
+  const brainBox = document.getElementById('flybrain').getBoundingClientRect();
+  if (brainBox.bottom > 0 && brainBox.top < innerHeight) flyBrain?.update(elapsed);
 }
 fitMap();
 requestAnimationFrame(loop);

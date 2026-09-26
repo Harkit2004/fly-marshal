@@ -23,6 +23,7 @@ import time
 import numpy as np
 
 from drones.sim import Drone
+from shared.settings import get
 from shared.config import DRONE_MAX_SPEED
 
 
@@ -82,17 +83,34 @@ class FlyBrainPilot:
             self._flow = None
             self._wake = threading.Event()
             self._step_s = 0.0
-            threading.Thread(target=self._loop, daemon=True, name="flybrain").start()
+            self._closed = False
+            self._interval = 1 / max(1.0, float(get("flybrain.max_hz", 15)))
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._loop, daemon=True, name="flybrain")
+            self._thread.start()
+
+    def close(self):
+        if self.threaded:
+            self._closed = True
+            self._stop.set()
+            self._wake.set()
+            self._thread.join()
 
     def _loop(self):
+        next_step = 0.0
         while True:
             self._wake.wait()
             self._wake.clear()
+            if self._closed:
+                return
+            if self._stop.wait(max(0, next_step - time.perf_counter())):
+                return
             flow = self._flow
             t0 = time.perf_counter()
             out = self.brain.step(flow)
             self._step_s = time.perf_counter() - t0
-            out["brain_hz"] = round(1.0 / max(self._step_s, 1e-3), 2)
+            next_step = t0 + self._interval
+            out["brain_hz"] = round(1.0 / max(self._step_s, self._interval), 2)
             self.out = out
 
     @staticmethod

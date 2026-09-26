@@ -208,11 +208,25 @@ export class View3D {
   }
 
   // ---------- track ----------
+  resetSession() {
+    this.trackRevision = (this.trackRevision || 0) + 1;
+    if (this.trackGroup) this.scene.remove(this.trackGroup);
+    this.trackGroup = null;
+    for (const c of this.cars.values()) this.scene.remove(c.mesh);
+    for (const d of this.drones.values()) this.scene.remove(d.mesh);
+    this.cars.clear(); this.drones.clear();
+    this.frames = null;
+  }
+
   async setTrack(track) {
+    const revision = this.trackRevision = (this.trackRevision || 0) + 1;
     await this.ready;
+    if (revision !== this.trackRevision) return;
     const st = track.settings || {};
     Object.assign(CFG, st.scene || {});
-    this.models = await loadModels(st);
+    const models = await loadModels(st);
+    if (revision !== this.trackRevision) return;
+    this.models = models;
     // anything built before the models arrived is rebuilt with them
     for (const c of this.cars.values()) this.scene.remove(c.mesh);
     for (const d of this.drones.values()) this.scene.remove(d.mesh);
@@ -447,14 +461,14 @@ export class View3D {
     this.center = new THREE.Box3().setFromObject(road).getCenter(new THREE.Vector3());
     this.controls.target.copy(this.center);
     this.camera.position.set(this.center.x, this.center.y + 900, this.center.z + 1100);
-    await this.loadCustomTrack(track.track_id);
+    await this.loadCustomTrack(track.track_id, revision);
   }
 
-  async loadCustomTrack(id) {
+  async loadCustomTrack(id, revision) {
     const entry = this.models?.tracks?.[id];
     if (!entry) return;
     const m = await this.models.load(entry);
-    if (!m) return;
+    if (!m || revision !== this.trackRevision) return;
     const obj = m.scene;
     obj.scale.setScalar(entry.scale || 1);
     obj.rotation.y = entry.rotation_y || 0;
@@ -775,6 +789,7 @@ export class View3D {
     const box = r.domElement.getBoundingClientRect();
     r.setScissorTest(true);
     for (const tile of this.ui.tiles.querySelectorAll("[data-drone]")) {
+      if (tile.dataset.source === 'game') continue;
       const dr = this.drones.get(+tile.dataset.drone);
       if (!dr) continue;
       const t = tile.querySelector(".feed").getBoundingClientRect();

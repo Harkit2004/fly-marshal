@@ -39,9 +39,11 @@ DEFAULTS = {
                "max_alt_m": 60.0, "patrol_alt_m": 25.0, "min_separation_m": 10.0,
                "track_clearance_m": 12.0, "standoff_m": 18.0, "hold_alt_m": 22.0,
                "escort_back_m": 25.0, "versus": True, "versus_stack_m": 14.0},
-    "flybrain": {"data_dir": "data/flywire", "model": "corrected", "synapse_stride": 0, "steer_assist": 0.0},
+    "flybrain": {"data_dir": "data/flywire", "model": "corrected", "synapse_stride": 0, "steer_assist": 0.0, "max_hz": 15.0},
     "vision": {"enabled": False, "provider": "openai", "model": "gpt-6-luna",
                "api_key_env": "OPENAI_API_KEY", "cache_dir": "cv/cache", "timeout_s": 8.0},
+    "game_feeds": {"enabled": False, "method": "geometry_shot", "width": 640, "height": 360,
+                   "fps": 4, "patrol_fps": 2, "frames_dir": "", "pose_port": 9777, "selected_drone": 0},
     "scene": {},          # dashboard has its own defaults
     "models": {},
     "tracks": {},

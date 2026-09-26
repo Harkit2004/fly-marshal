@@ -88,3 +88,7 @@ ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: col
 [hidden] { display: none !important; }
 
 .chip.unknown { opacity: .55; border-style: dashed; }
+#tiles .game-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+#tiles .game-frame[hidden] { display: none; }
+#tiles .source { font-weight: bold; color: #b3c6d4; }
+#tiles [data-source="game"] .source { color: #62efae; }

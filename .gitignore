@@ -27,11 +27,13 @@ Thumbs.db
 
 # Secrets
 .env
+data/runtime/
 
 # Custom 3D models (can be large / licensed)
 dashboard/assets/models/*.glb
 dashboard/assets/models/*.gltf
 dashboard/assets/models/*.bin
+!dashboard/assets/models/dji_fpv_combo.glb
 
 # FlyWire data and the GPL-3.0 brain mesh: fetched by tools/fetch_flywire.py, not committed
 data/flywire/

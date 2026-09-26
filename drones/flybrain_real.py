@@ -136,6 +136,9 @@ class CorrectedLIF:
         self.substeps = substeps
         self.decay = math.exp(-self.DT / self.TAU_SYN)
         self.torch = torch
+        # Connectivity is fixed: compressed rows avoid repeated COO work for
+        # the 20 sparse matrix/vector products in each control step.
+        self.conn_T = upstream.conn_T.to_sparse_csr()
         self.spikes = torch.zeros(self.n_neurons, dtype=torch.bool, device=self.device)
         self.reset_state()
 
@@ -150,12 +153,13 @@ class CorrectedLIF:
     def _step(self, drive):
         u = self.u
         self.ref = (self.ref - self.DT).clamp(min=0)
-        syn = self.torch.sparse.mm(u.conn_T, self.spikes.float().unsqueeze(1)).squeeze()
+        syn = self.torch.sparse.mm(self.conn_T, self.spikes.float().unsqueeze(1)).squeeze()
         self.g = self.g * self.decay + syn * (self.W_SYN_MV * 1e-3)
         self.v = self.v + (u.V_rest - self.v + self.g + drive) * (self.DT / self.TAU_M)
         self.spikes = (self.v > u.V_thresh) & (self.ref <= 0)
-        self.v[self.spikes] = u.V_rest
-        self.ref[self.spikes] = u.tau_ref
+        # Boolean indexed assignment performs nonzero() and synchronizes CUDA.
+        self.v = self.torch.where(self.spikes, u.V_rest, self.v)
+        self.ref = self.torch.where(self.spikes, u.tau_ref, self.ref)
 
     def compute(self, optic_flow):
         t, u = self.torch, self.u
