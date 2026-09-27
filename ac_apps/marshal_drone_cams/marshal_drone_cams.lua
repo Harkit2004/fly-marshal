@@ -101,6 +101,16 @@ function script.update(dt)
     if ok and type(parsed) == 'table' and (not packet or packet.run_id ~= parsed.run_id) then nextCapture = {} end
     packet = ok and type(parsed) == 'table' and parsed or nil
   end
+  -- Keep baseline FPS observable even with capture paused.
+  if statsClock >= 1 and packet and packet.frames_dir then
+    statsClock = 0
+    pcall(function()
+      io.save(packet.frames_dir .. '/status.json', JSON.stringify({run_id = packet.run_id,
+        game_fps = ac.getSim().fps, saved_frames = saved, last_capture_ms = captureMs,
+        paused = paused, poses_fresh = fresh(),
+        method = packet.method, error = lastError, time = os.time()}), true)
+    end)
+  end
   if paused or not fresh() then releaseCamera(); return end
   local p = packet
   local drones = p.drones
@@ -142,14 +152,6 @@ function script.update(dt)
       if not ok then lastError = tostring(err) end
       break
     end
-  end
-  if statsClock >= 1 then
-    statsClock = 0
-    pcall(function()
-      io.save(p.frames_dir .. '/status.json', JSON.stringify({run_id = p.run_id,
-        game_fps = ac.getSim().fps, saved_frames = saved, last_capture_ms = captureMs,
-        method = p.method, error = lastError, time = os.time()}), true)
-    end)
   end
 end
 

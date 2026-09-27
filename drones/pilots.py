@@ -24,7 +24,7 @@ import numpy as np
 
 from drones.sim import Drone
 from shared.settings import get
-from shared.config import DRONE_MAX_SPEED
+from shared.config import DRONE_MAX_SPEED, DRONE_MAX_ACCEL
 
 
 class PIDPilot:
@@ -36,7 +36,7 @@ class PIDPilot:
         cmd = self.kp * err - self.kd * d.vel * 0.1
         # slow down smoothly when close so it doesn't overshoot
         dist = np.linalg.norm(err)
-        max_sp = min(DRONE_MAX_SPEED, 0.8 * math.sqrt(2 * 8.0 * max(dist, 0.01)))
+        max_sp = min(DRONE_MAX_SPEED, 0.8 * math.sqrt(2 * DRONE_MAX_ACCEL * max(dist, 0.01)))
         n = np.linalg.norm(cmd)
         if n > max_sp:
             cmd *= max_sp / n

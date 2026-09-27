@@ -17,6 +17,12 @@ const ui = { labels: true, feeds: true, tiles: document.getElementById("tiles") 
 const gameFrames = new Map();
 const escapeHTML = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
 
+function* carsPlayerLast() {
+  const id = state.track?.settings?.scene?.player_car_id ?? 0;
+  for (const car of state.cars.values()) if (car.car_id !== id) yield car;
+  if (state.cars.has(id)) yield state.cars.get(id);
+}
+
 function updateGameTiles() {
   const now = performance.now();
   for (const tile of ui.tiles.querySelectorAll('[data-drone]')) {
@@ -107,11 +113,16 @@ connect(BRAIN_URL, "conn-brain", (m) => {
     if (fly?.fly_activity?.source === "flywire") flyBrain?.fire(fly.fly_activity.fired);
     if (m.events) {
       const ids = m.events.map((e) => e.id + e.kind).join();
-      if (ids !== state.eventKey) { state.eventKey = ids; state.events = new Map(m.events.map((e) => [e.id, e])); renderAlerts(); }
+      state.events = new Map(m.events.map((e) => [e.id, e]));
+      if (ids !== state.eventKey) { state.eventKey = ids; renderAlerts(); }
+      if (state.report && !state.events.has(state.report.event_id)) { state.report = null; renderReport(); }
     }
   }
   else if (m.type === "risk") { state.events.set(m.event.id, m.event); renderAlerts(); }
-  else if (m.type === "risk_end") { state.events.delete(m.id); renderAlerts(); }
+  else if (m.type === "risk_end") {
+    state.events.delete(m.id); renderAlerts();
+    if (state.report?.event_id === m.id) { state.report = null; renderReport(); }
+  }
   else if (m.type === "report") { state.report = m.report; renderReport(); }
 });
 
@@ -169,11 +180,14 @@ function draw2d(now) {
 
   ctx.font = "600 10px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   const flagged = new Set([...state.events.values()].flatMap((e) => e.car_ids));
-  for (const c of state.cars.values()) {
+  for (const c of carsPlayerLast()) {
     const [a, b] = P(c.x, c.z);
-    ctx.fillStyle = flagged.has(c.car_id) ? css("--inc") : css("--car");
-    ctx.beginPath(); ctx.arc(a, b, 7, 0, Math.PI * 2); ctx.fill();
+    const player = c.car_id === (state.track?.settings?.scene?.player_car_id ?? 0);
+    ctx.fillStyle = player ? '#32e875' : flagged.has(c.car_id) ? css("--inc") : css("--car");
+    ctx.beginPath(); ctx.arc(a, b, player ? 9 : 7, 0, Math.PI * 2); ctx.fill();
+    if (player) { ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }
     ctx.fillStyle = "#0d1214"; ctx.fillText(c.car_id, a, b + 0.5);
+    if (player) { ctx.fillStyle = '#32e875'; ctx.fillText('YOU', a, b - 16); }
   }
   for (const d of state.drones) {
     const [a, b] = P(d.x, d.z);
@@ -204,10 +218,12 @@ function drawMinimap() {
   state.track.centerline.forEach((p, i) => { const [a, b] = P(p[1], p[3], t); i ? mctx.lineTo(a, b) : mctx.moveTo(a, b); });
   mctx.closePath(); mctx.strokeStyle = "#56625f"; mctx.lineWidth = 3; mctx.stroke();
   const flagged = new Set([...state.events.values()].flatMap((e) => e.car_ids));
-  for (const c of state.cars.values()) {
+  for (const c of carsPlayerLast()) {
     const [a, b] = P(c.x, c.z, t);
-    mctx.fillStyle = flagged.has(c.car_id) ? css("--inc") : "#d8e2df";
-    mctx.fillRect(a - 1.5, b - 1.5, 3, 3);
+    const player = c.car_id === (state.track?.settings?.scene?.player_car_id ?? 0);
+    mctx.fillStyle = player ? '#32e875' : flagged.has(c.car_id) ? css("--inc") : "#d8e2df";
+    const radius = player ? 3 : 1.5;
+    mctx.fillRect(a - radius, b - radius, radius * 2, radius * 2);
   }
   for (const d of state.drones) {
     const [a, b] = P(d.x, d.z, t);

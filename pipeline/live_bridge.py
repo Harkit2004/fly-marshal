@@ -246,10 +246,15 @@ async def main():
             if clock0:
                 now_t = clock0[0] + (time.perf_counter() - clock0[1])
                 newest = tail.frames[-1][0] if tail.frames else now_t
+                if newest - now_t > args.delay + 1.0:
+                    now_t = newest - args.delay
+                    clock0 = (now_t, time.perf_counter())
                 if now_t > newest:        # ran dry (chunk late): hold, then resync
                     clock0 = (newest, time.perf_counter())
                 while tail.frames and tail.frames[0][0] <= now_t:
                     t, cars = tail.frames.popleft()
+                    if tail.frames and tail.frames[0][0] <= now_t:
+                        continue  # catch up with one current frame, not an old-frame burst
                     new_track = track.feed(tail, cars)
                     if new_track:
                         broadcast(server.connections, live_track(new_track))

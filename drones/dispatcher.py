@@ -25,10 +25,10 @@ VERSUS_STACK_M = float(get("drones.versus_stack_m"))
 
 
 class Dispatcher:
-    def __init__(self, track: Track, drones: list[Drone], versus: bool = True):
+    def __init__(self, track: Track, drones: list[Drone], versus: bool = False):
         self.track = track
         self.drones = drones
-        self.versus = versus          # also send the fly drone to every incident (Fly vs Code)
+        self.versus = False           # compatibility argument; operational dispatch is one drone per car
         n = len(drones)
         self.sector_tp = {d.id: (k + 0.5) / n for k, d in enumerate(drones)}
         self.events: dict[str, dict] = {}
@@ -50,46 +50,26 @@ class Dispatcher:
             free = [d for d in self.drones if d.mode == "intercept"]
         if not free:
             return []
-        fly = next((d for d in free if d.pilot == "fly"), None)
-        if self.versus and event["type"] == "incident" and fly:
-            # Fly vs Code: nearest conventional drone + the fly drone race to the same spot
-            pid = [d for d in free if d.pilot != "fly"]
-            sent = ([min(pid, key=lambda d: self.eta(d, p))] if pid else []) + [fly]
-        else:
-            sent = [min(free, key=lambda d: self.eta(d, p))]
+        # One owner per car, including warning -> incident transitions.
+        for old_id, info in list(self.events.items()):
+            if set(info["event"]["car_ids"]) & set(event["car_ids"]):
+                self.release(old_id)
+        sent = [min(free, key=lambda d: self.eta(d, p))]
+        for d in sent:
+            if d.event_id:
+                self.release(d.event_id)
         mode = "hold" if event["type"] == "incident" else "intercept"
         for d in sent:
-            # stack drones vertically so the safety layer doesn't have to separate them
-            lift = np.array([0.0, VERSUS_STACK_M if d.pilot == "fly" and len(sent) > 1 else 0.0, 0.0])
-            d.mode, d.event_id, d.target, d.follow_car = mode, event["id"], p + lift, None
+            d.mode, d.event_id, d.target, d.follow_car = mode, event["id"], p, None
         self.events[event["id"]] = {"event": event, "drones": [d.id for d in sent]}
         return [d.id for d in sent]
 
     def reinforce(self, event: dict) -> list[int]:
-        """Send newly freed drones to an active incident that is short of drones.
-        In versus mode the fly drone always joins; otherwise top up to one drone."""
-        info = self.events.get(event["id"])
-        if info is None or event["type"] != "incident":
+        """Retry unassigned events without adding a second drone."""
+        if any(d.event_id == event["id"] for d in self.drones):
             return []
-        mine = [d for d in self.drones if d.event_id == event["id"]]
-        free = [d for d in self.drones if d.mode == "patrol"]
-        if not free:
-            return []
-        p = self.track.standoff(event["track_pos"], STANDOFF_M, HOLD_ALT)
-        send = []
-        if self.versus and not any(d.pilot == "fly" for d in mine):
-            send += [d for d in free if d.pilot == "fly"][:1]
-        if not any(d.pilot != "fly" for d in mine):
-            pid = [d for d in free if d.pilot != "fly"]
-            if pid:
-                send.append(min(pid, key=lambda d: self.eta(d, p)))
-        for d in send:
-            lift = np.array([0.0, VERSUS_STACK_M if d.pilot == "fly" else 0.0, 0.0])
-            d.mode, d.event_id, d.target, d.follow_car = ("escort" if any(m.mode == "escort" for m in mine) else "hold"), event["id"], p + lift, None
-            if d.mode == "escort":
-                d.follow_car = event["car_ids"][0]
-            info["drones"].append(d.id)
-        return [d.id for d in send]
+        self.events.pop(event["id"], None)
+        return self.assign(event)
 
     def escort(self, event_id: str, car_id: int) -> None:
         for d in self.drones:
@@ -108,7 +88,12 @@ class Dispatcher:
             if d.mode == "escort" and d.follow_car in cars:
                 c = cars[d.follow_car]
                 tp = self.track.advance(c["track_pos"], -ESCORT_BACK_M)
-                d.target = self.track.standoff(tp, STANDOFF_M, HOLD_ALT + (VERSUS_STACK_M if d.pilot == "fly" else 0))
+                d.target = self.track.standoff(tp, STANDOFF_M, HOLD_ALT)
+            elif d.event_id in self.events:
+                event = self.events[d.event_id]["event"]
+                c = cars.get(event["car_ids"][0])
+                if c:
+                    d.target = self.track.standoff(c["track_pos"], STANDOFF_M, HOLD_ALT)
             elif d.mode == "patrol":
                 d.target = self.patrol_point(d)
             out[d.id] = d.target

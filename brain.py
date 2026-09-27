@@ -34,6 +34,7 @@ from shared.settings import get
 from shared.config import BRAIN_WS_PORT, DATA, DRONE_COUNT, DRONE_PATROL_ALT, TELEMETRY_WS_PORT
 from shared.schemas import RiskEvent, message
 from shared.track import Track
+from shared.telemetry import telemetry_messages
 
 # tune in settings.toml [detection]
 ANOMALY_ON = float(get("detection.anomaly_on"))
@@ -48,6 +49,11 @@ class Brain:
         self.features = OnlineFeatures(track)
         self.anomaly = AnomalyDetector(DATA.parent / "models" / "anomaly.pkl")
         self.risk = RiskPredictor(DATA.parent / "models" / "risk.pkl")
+        for name, detector in (("incident", self.anomaly), ("risk", self.risk)):
+            model = detector.model
+            status = (f"trained {type(model['model']).__name__}, {len(model['features'])} features"
+                      if model is not None else "rule fallback (no compatible trained model)")
+            print(f"[ml] {name}: {status}", flush=True)
         self.drones = []
         for k in range(DRONE_COUNT):
             pilot = "fly" if k == 0 else "pid"
@@ -60,7 +66,12 @@ class Brain:
         self.hot: dict[int, int] = {}                  # car -> consecutive anomalous ticks
         self.active: dict[int, dict] = {}              # car -> active event dict
         self.slow: dict[int, int] = {}                 # car -> consecutive "limping" ticks
+        self.slow_since = {}
         self.last_t: float | None = None
+        self.clear_since = {}
+        self.cooldown = {}
+        self.origins = {}
+        self.event_seq = 0
 
     def kind_of(self, f: dict) -> str:
         if abs(f["yaw_rate"]) > 1.2 and f["speed_deficit_kmh"] > 40:
@@ -77,16 +88,21 @@ class Brain:
                 pilot.close()
 
     def new_event(self, t, typ, kind, car, c, severity, eta=0.0) -> dict:
-        ev = RiskEvent(id=f"{typ[:3]}-{car}-{int(t)}", t=t, type=typ, kind=kind, car_ids=[car],
+        self.event_seq += 1
+        ev = RiskEvent(id=f"{typ[:3]}-{car}-{int(t)}-{self.event_seq}", t=t, type=typ, kind=kind, car_ids=[car],
                        x=c["x"], y=c["y"], z=c["z"], track_pos=c["track_pos"],
                        severity=round(severity, 2), eta_s=round(eta, 1))
+        self.origins[ev.id] = (c["x"], c["z"])
         return ev.__dict__
 
     def tick(self, t: float, cars: list[dict]) -> list[str]:
         msgs: list[str] = []
-        dt = 0.05 if self.last_t is None or not 0 < t - self.last_t < 1 else t - self.last_t
+        dt = 0.05 if self.last_t is None else min(1.0, max(0.001, t - self.last_t))
         self.last_t = t
         byid = {c["car_id"]: c for c in cars}
+        for car, event in list(self.active.items()):
+            if car not in byid or byid[car].get("in_pit"):
+                self.end(event, msgs)
         feats = self.features.update(t, cars)
 
         # score every racing car of this tick in one model call
@@ -102,7 +118,7 @@ class Brain:
         scored = dict(zip(racing, self.anomaly.score_many([feats[c] for c in racing])))
         for car in racing:
             self.hot[car] = self.hot.get(car, 0) + 1 if scored[car][0] > ANOMALY_ON else 0
-        quiet = [c for c in racing if c not in self.active]
+        quiet = [c for c in racing if c not in self.active or self.active[c]["type"] == "predicted"]
         preds = dict(zip(quiet, self.risk.predict_many(
             [feats[c] for c in quiet], [scored[c][0] if self.hot[c] >= 3 else 0.0 for c in quiet])))
 
@@ -110,6 +126,34 @@ class Brain:
             f, c = feats[car], byid[car]
             score, model_kind = scored[car]
             act = self.active.get(car)
+            # Slow running is a separate telemetry hazard: the crash classifier
+            # need not label a steadily limping car as a crash.
+            moving_slow = (float(get("detection.slow_min_kmh", 5)) < f["speed_kmh"]
+                           < float(get("detection.slow_max_kmh", 100))
+                           and f["speed_deficit_kmh"] > float(get("detection.slow_deficit_kmh", 60))
+                           and f["accel"] > -1 and f.get("wheels_out", 0) < 3)
+            if moving_slow:
+                self.slow_since.setdefault(car, t)
+            else:
+                self.slow_since.pop(car, None)
+            slow_ready = moving_slow and t - self.slow_since[car] >= float(get("detection.slow_confirm_s", 2))
+            if act is None and t < self.cooldown.get(car, 0):
+                continue
+
+            if slow_ready and (act is None or act["kind"] != "limp"):
+                if act and act["type"] == "predicted":
+                    self.end(act, msgs)
+                    act = None
+                if act is None:
+                    act = self.new_event(t, "incident", "limp", car, c, max(score, .6))
+                    self.active[car] = act
+                    self.dispatch.assign(act)
+                else:
+                    act["kind"] = "limp"
+                self.clear_since.pop(car, None)
+                self.dispatch.escort(act["id"], car)
+                msgs.append(message("risk", event=act))
+                msgs.append(message("report", report=telemetry_report(act, f)))
 
             # reactive: sustained anomaly -> incident
             if self.hot[car] >= ANOMALY_TICKS and (act is None or act["type"] == "predicted"):
@@ -137,24 +181,40 @@ class Brain:
 
             # lifecycle of active events
             age = t - act["t"]
-            if act["type"] == "predicted" and age > act["eta_s"] + PREDICT_TTL_S:
-                self.end(act, msgs)
-            elif act["type"] == "incident":
-                # limping = moving slowly without decelerating, sustained for 2 s
-                moving_slow = 20 < f["speed_kmh"] < 100 and f["speed_deficit_kmh"] > 60 and f["accel"] > -1
-                self.slow[car] = self.slow.get(car, 0) + 1 if moving_slow else 0
-                gone_m = abs((c["track_pos"] - act["track_pos"] + 0.5) % 1.0 - 0.5) * self.track.length
-                recovered = f["speed_deficit_kmh"] < 30 or (gone_m > 250 and f["speed_deficit_kmh"] < 60)
-                if self.slow[car] >= 30 and act["kind"] != "limp":
-                    act["kind"] = "limp"
-                    self.dispatch.escort(act["id"], car)
-                    msgs.append(message("risk", event=act))
-                elif recovered or age > INCIDENT_MAX_S:
+            if act["type"] == "predicted":
+                clear = preds.get(car) is None
+                self.clear_since[car] = self.clear_since.get(car, t) if clear else t
+                if (clear and t - self.clear_since[car] >= float(get("detection.clear_after_s", .75))) or age > act["eta_s"] + PREDICT_TTL_S:
                     self.end(act, msgs)
+            elif act["type"] == "incident":
+                origin = self.origins.get(act["id"], (act["x"], act["z"]))
+                gone_m = float(np.hypot(c["x"] - origin[0], c["z"] - origin[1]))
+                driving = f["speed_kmh"] > 40 and f.get("wheels_out", 0) < 3 and abs(f["yaw_rate"]) < 1.2
+                clear = not moving_slow and driving and (score < ANOMALY_ON or f["speed_deficit_kmh"] < 30 or gone_m > float(get("detection.departed_m", 40)))
+                if act["kind"] == "limp":
+                    # Leaving the original location is expected for an escort.
+                    clear = f["speed_deficit_kmh"] < 30 and f["speed_kmh"] > float(get("detection.slow_min_kmh", 5))
+                    if f["speed_kmh"] <= float(get("detection.slow_min_kmh", 5)):
+                        act["kind"] = "stopped"
+                        for drone in self.drones:
+                            if drone.event_id == act["id"]:
+                                drone.mode, drone.follow_car = "hold", None
+                        msgs.append(message("risk", event=act))
+                        msgs.append(message("report", report=telemetry_report(act, f)))
+                self.clear_since[car] = self.clear_since.get(car, t) if clear else t
+                recovered = clear and t - self.clear_since[car] >= float(get("detection.clear_after_s", .75))
+                if recovered or (age > INCIDENT_MAX_S and act["kind"] != "limp"):
+                    self.end(act, msgs)
+            if self.active.get(car) is act:
+                for key in ("x", "y", "z", "track_pos"):
+                    act[key] = c[key]
 
         # freed drones top up incidents that are still active
         for ev in {id(e): e for e in self.active.values()}.values():
             self.dispatch.reinforce(ev)
+            if ev["kind"] == "limp":
+                self.dispatch.escort(ev["id"], ev["car_ids"][0])
+        self.slow_since = {car: since for car, since in self.slow_since.items() if car in racing}
 
         # drones
         targets = self.dispatch.targets(byid)
@@ -169,9 +229,15 @@ class Brain:
 
     def end(self, ev: dict, msgs: list[str]) -> None:
         self.dispatch.release(ev["id"])
+        self.origins.pop(ev["id"], None)
         for car in ev["car_ids"]:
             if self.active.get(car) is ev:
                 del self.active[car]
+                self.hot.pop(car, None)
+                self.slow.pop(car, None)
+                self.slow_since.pop(car, None)
+                self.clear_since.pop(car, None)
+                self.cooldown[car] = (self.last_t or 0) + float(get("detection.rearm_s", 1.5))
         msgs.append(json.dumps({"type": "risk_end", "id": ev["id"]}))
 
 
@@ -204,14 +270,7 @@ async def main():
                     print("connected to telemetry")
                     brain = None
                     cars, source_live, last_telemetry = [], False, 0.0
-                    while True:
-                        # Keep camera capture alive between logger flushes. recv cancellation
-                        # is safe in websockets; a timeout does not discard the next message.
-                        try:
-                            raw = await asyncio.wait_for(tel.recv(), timeout=0.1)
-                            m = json.loads(raw)
-                        except asyncio.TimeoutError:
-                            m = {}
+                    async for m in telemetry_messages(tel):
                         if m.get("type") in ("session_reset", "track"):
                             session_id = m.get("session_id")
                             feeds.reset(False)
@@ -233,7 +292,7 @@ async def main():
                             cars, last_telemetry = m["cars"], time.monotonic()
                             if source_live and not feeds.live:
                                 feeds.reset(True)
-                            for out in brain.tick(m["t"], m["cars"]):
+                            for out in await asyncio.to_thread(brain.tick, m["t"], m["cars"]):
                                 if '"risk' in out[:20] or '"report' in out[:20]:
                                     print(out[:160])
                                 emit(out)

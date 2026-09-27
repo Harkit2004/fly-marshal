@@ -30,10 +30,17 @@ track_source = "auto"
 # An incident is raised when the anomaly score stays above `anomaly_on` for
 # `anomaly_ticks` telemetry ticks in a row (15 ticks = 1 s). Lower = faster but more false alarms.
 anomaly_on = 0.5
-anomaly_ticks = 8
+anomaly_ticks = 3
+clear_after_s = 0.75        # sustained recovery before removing an alert
+rearm_s = 1.5              # prevent immediate re-alerts from the same feature window
+departed_m = 40.0          # recovered moving car has left the incident location
+slow_min_kmh = 5.0         # below this, treat as stopped rather than escorting
+slow_max_kmh = 100.0
+slow_deficit_kmh = 60.0    # slower than normal at this part of the track
+slow_confirm_s = 2.0      # sustained slow running, not momentary braking
 
 # A prediction ("car X is about to be hit") is dropped this long after its ETA passes.
-predict_ttl_s = 8.0
+predict_ttl_s = 1.0
 
 # Incidents close on their own after this long, or when the car pits / drives away / recovers.
 incident_max_s = 90.0
@@ -41,8 +48,8 @@ incident_max_s = 90.0
 # ─────────────────────────────────────────────────────────────────────────────
 [drones]
 count = 3                  # drone 0 is the fly-brain drone, the rest are PID
-max_speed_mps = 25.0       # 25 m/s = 90 km/h
-max_accel_mps2 = 8.0
+max_speed_mps = 130.0      # simulated drone: 468 km/h maximum, slows near target
+max_accel_mps2 = 50.0      # simulation response, not physical drone performance
 min_alt_m = 15.0           # height above the track surface
 max_alt_m = 60.0
 patrol_alt_m = 25.0
@@ -53,8 +60,8 @@ standoff_m = 18.0          # how far to the side of an incident a drone parks
 hold_alt_m = 22.0          # altitude while holding over an incident
 escort_back_m = 25.0       # how far behind a limping car an escort drone flies
 
-# Versus mode: every incident gets the nearest PID drone AND the fly drone ("Fly vs Code").
-versus = true
+# Legacy comparison option retained for compatibility; dispatch now enforces one drone per car.
+versus = false
 versus_stack_m = 14.0      # vertical gap between the two so they don't collide
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -89,7 +96,7 @@ timeout_s = 8.0
 
 # Game-rendered camera feeds. Off by default; replay always uses the 3D fallback.
 [game_feeds]
-enabled = false
+enabled = true
 method = "geometry_shot"    # all drones off-screen; "main_camera" captures one AC screen
 width = 640                 # off-screen image width; main_camera uses the game's resolution
 height = 360                # off-screen image height
@@ -101,6 +108,7 @@ selected_drone = 0          # main_camera drone; also enable takeover in the in-
 
 # ─────────────────────────────────────────────────────────────────────────────
 [scene]
+player_car_id = 0           # local AC player car; green map marker and red 3D arrow
 dashboard_fps = 30          # browser render cap; telemetry/control rates unchanged
 # 3D dashboard look. Sizes in metres.
 board_gap_m = 4.0          # gap between the track edge and the sponsor barrier

@@ -33,6 +33,7 @@ Checked items mean implementation with the stated verification, not live accepta
 - [x] Automated mock API/schema/cache/timeout tests.
 - [ ] Real API call with user's key and an incident game frame.
 - [ ] Observe incident card update within configured timeout.
+- [x] Standalone real API test on a saved AC game image: valid structured response in 4.3 seconds. This does not verify live scheduling/card delivery.
 
 ## 5. Settings and documentation
 - [x] Add game_feeds settings, installation helper and combined launcher.
@@ -44,6 +45,15 @@ Checked items mean implementation with the stated verification, not live accepta
 - [ ] Real vision request and report displayed.
 - [ ] FPS comparison recorded (do not infer performance from Python tests).
 - [ ] AC-closed replay confirmed visually with 3D and unknown visual fields.
+- [x] Replay visually verified: all three feeds show 3D and visual report fields stay unknown. AC process was still open, so the literal AC-closed check remains pending.
+
+## Acceptance progress — 2026-09-26
+- Camera-enabled run: 35 fresh status samples, mean 37.47 FPS, minimum sampled FPS 19.21. No matched capture-off sample: user left the race. This is not a measured camera FPS cost or a 1% low.
+- Fixed Lua status updates during paused capture; installed with backup. Status now includes paused and poses_fresh.
+- Saved camera views contain visible cars, but full distant-body visibility needs a matched main-camera comparison.
+- Vision enabled locally in settings after key presence and configured-model access were verified without exposing the key.
+- Player indicator implemented: green YOU marker drawn last on 2D/minimap, red downward cone and YOU label on player car 0 in 3D. Both visually checked in replay.
+- JavaScript syntax checks and all 16 Python tests passed.
 
 ## Requested follow-up: start the real fly
 - [x] Download FlyWire v783 dataset and generate viewer assets (139,255 neurons).

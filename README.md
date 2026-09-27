@@ -279,6 +279,22 @@ These checks require no API key and do not establish GPU performance or live ren
 
 ## Coordinates
 
+Live response now uses one drone per car, including retries and warning-to-incident upgrades.
+Warning scores are rechecked while active; alert coordinates and drone targets follow current telemetry.
+Recovered moving cars clear after `detection.clear_after_s` (0.75 s), including departure beyond
+`detection.departed_m` (40 m), with a short rearm delay to avoid repeated alerts from stale feature windows.
+Stationary hazards remain active. Closed alerts also clear their dashboard report.
+Slow-car escorting supplements the crash ML model with a telemetry rule: sustained running
+between 5 and 100 km/h, over 60 km/h below the expected speed at that track location, for
+2 seconds without heavy braking. Pit cars and cars with three or more wheels off track
+are excluded. The `detection.slow_*` settings control these limits. A single drone follows
+the car until its speed deficit stays below 30 km/h for the recovery interval, it pits,
+or disappears; leaving the initial incident location does not cancel the escort.
+Live consumers coalesce queued frames rather than processing a backlog; replay retains every frame.
+The logger still adds its configured flush latency (1 s locally) plus `live.delay_s`.
+Drone speed is now a simulation setting of 130 m/s (468 km/h), with 50 m/s² acceleration;
+actual speed is lower when turning, braking or holding. These are not physical drone specifications.
+
 AC world coordinates, metres, `y` up. `track_pos` is AC's spline position (0–1). If the 3D view looks mirrored compared with the 2D map, set `MIRROR_Z = true` in `dashboard/view3d.js`.
 
 ## Sponsor logos

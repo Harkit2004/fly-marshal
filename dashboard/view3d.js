@@ -21,6 +21,7 @@ import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 
 const DEFAULT_HALF_WIDTH = 6;
 const CFG = {
+  player_car_id: 0,
   mirror_z: false,
   board_gap_m: 4,           // between track edge and sponsor boards
   board_height_m: 1.2,
@@ -512,9 +513,18 @@ export class View3D {
     }
     const shadow = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 2.2), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
     shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.06; root.add(shadow);
-    const label = this.makeLabel(`#${id}`);
-    label.position.y = 3.2;
+    const player = id === CFG.player_car_id;
+    const label = this.makeLabel(player ? `YOU · #${id}` : `#${id}`);
+    label.position.y = player ? 5.2 : 3.2;
     root.add(label);
+    if (player) {
+      const marker = new THREE.Mesh(new THREE.ConeGeometry(0.65, 1.6, 4),
+        new THREE.MeshBasicMaterial({ color: 0xff3030, depthTest: false, depthWrite: false }));
+      marker.rotation.z = Math.PI;
+      marker.position.y = 3.5;
+      marker.renderOrder = 11;
+      root.add(marker);
+    }
     root.scale.setScalar(CFG.car_scale);
     this.scene.add(root);
     return { mesh: root, wheels, label, yaw: 0 };
@@ -659,7 +669,7 @@ export class View3D {
       const spin = (c.speed_kmh / 3.6) / 0.36 * dt;
       car.wheels.forEach((w) => (w.rotation.z -= spin));
       car.label.visible = this.ui.labels;
-      car.mesh.visible = !c.in_pit || c.speed_kmh > 1;
+      car.mesh.visible = c.car_id === CFG.player_car_id || !c.in_pit || c.speed_kmh > 1;
     }
 
     // drones: interpolate, face travel direction, tilt with speed and turn rate, spin rotors
