@@ -111,6 +111,7 @@ selected_drone = 0          # main_camera drone; also enable takeover in the in-
 yellow_zones_enabled = true # false restores the plain track map
 yellow_3d_enabled = true    # roadside ribbons and zone boundary markers
 yellow_hud_enabled = true   # display-only CSP flag, independent of camera capture
+yellow_native_enabled = true # override AC flag while player is in a fresh live yellow zone
 yellow_ai_enabled = true   # experimental offline AI speed and following control; requires physics.allowed()
 yellow_ai_speed_kmh = 80.0
 yellow_ai_approach_m = 250.0 # braking approach before the yellow-zone entrance

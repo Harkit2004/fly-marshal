@@ -40,7 +40,7 @@ class CautionFeed:
 
     def publish(self, brain, session_id, track_id, live, age):
         # Never renew old warnings while telemetry is absent, or from a replay.
-        if not live or age >= 2 or not (get('scene.yellow_hud_enabled', True) or get('scene.yellow_ai_enabled', False)):
+        if not live or age >= 2 or not (get('scene.yellow_hud_enabled', True) or get('scene.yellow_ai_enabled', False) or get('scene.yellow_native_enabled', True)):
             return
         now = time.monotonic()
         if now - self.last_write < .1:
@@ -50,6 +50,7 @@ class CautionFeed:
                     sent_at=time.time(), ranges=caution_ranges(brain.active.values(), brain.track.length),
                     ai_enabled=bool(get('scene.yellow_ai_enabled', False)),
                     hud_enabled=bool(get('scene.yellow_hud_enabled', True)),
+                    native_enabled=bool(get('scene.yellow_native_enabled', True)),
                     speed_kmh=get('scene.yellow_ai_speed_kmh', 80), approach_m=get('scene.yellow_ai_approach_m', 250),
                     gap_m=get('scene.yellow_ai_gap_m', 20),
                     incident_cars=[car for e in brain.active.values() if e['type']=='incident' for car in e['car_ids']] ))

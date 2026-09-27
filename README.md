@@ -287,7 +287,7 @@ a yellow zone. Overlaps merge and the start/finish boundary wraps; zones disappe
 their incidents end. This is a demo visualization, not an official marshal-sector system.
 Configure `scene.yellow_before_m` and `scene.yellow_after_m`, or set
 `scene.yellow_zones_enabled = false` to disable it; restart the bridge and refresh the page.
-Native game flag state is unchanged. Optional AI control is described below.
+Optional native flag override and AI control are described below.
 
 The 3D view now adds translucent yellow roadside ribbons and YELLOW/END markers using the
 same merged zones. Geometry is refreshed at most 5 times/second, and removed resources are
@@ -304,6 +304,17 @@ yellow flags" in the Lua app. Restart AC after installing the updated app and re
 launcher after upgrading the brain. Real in-game rendering remains an acceptance check;
 Lua behaviour is tested with mocked CSP functions. The 3D rendering/removal was visually
 verified using a labelled test track.
+
+Native yellow override is enabled by `scene.yellow_native_enabled = true`. While the
+player is inside a fresh live zone, Marshal calls CSP `physics.overrideRacingFlag(Caution)`
+even when AC has another flag showing. This replaces the current native flag, including
+other flag types; it is scoped to local sessions and does not itself enforce racing rules.
+On exit, stale data, pits, replay, disable or app shutdown, `overrideRacingFlag(None)`
+returns flag handling to AC. The display-only HUD remains available as a fallback and
+does not draw a duplicate when the native override is active. If CSP denies physics
+access, the app reports it. Actual native rendering needs an in-game acceptance check.
+Uncheck **Override AC native flag in yellow zones** for immediate rollback, or set
+`yellow_native_enabled = false` and restart the launcher for a persistent rollback.
 
 The **Marshal Drone Cams** app now also offers experimental local-race AI slowing.
 `scene.yellow_ai_enabled = true` enables an 80 km/h cap inside zones, a 250 m braking

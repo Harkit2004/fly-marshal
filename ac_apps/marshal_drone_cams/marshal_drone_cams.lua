@@ -11,9 +11,11 @@ local mainId, cameraAge = nil, 0
 local cautionInbox = ac.getFolder(ac.FolderID.Root) .. '/logs/marshal_cautions.json'
 local cautionPacket, showCautions = nil, true
 local yellowAI = require('yellow_control')
+local yellowFlag = require('yellow_flag')
 local aiClock = 0
 
 function script.drawCautionHUD()
+  if yellowFlag.active then return end -- AC draws the native flag; avoid duplicate icons.
   local p = cautionPacket
   if not showCautions or not p or p.hud_enabled == false or p.source ~= 'live' or type(p.sent_at) ~= 'number'
       or math.abs(os.time() - p.sent_at) >= 2 or type(p.ranges) ~= 'table'
@@ -138,6 +140,8 @@ function script.update(dt)
     if ok and type(parsed) == 'table' and (not packet or packet.run_id ~= parsed.run_id) then nextCapture = {} end
     packet = ok and type(parsed) == 'table' and parsed or nil
   end
+  local flagOK = pcall(yellowFlag.update, cautionPacket)
+  if not flagOK then yellowFlag.reset(); yellowFlag.status='Native yellow error; override released' end
   -- Keep baseline FPS observable even with capture paused.
   if statsClock >= 1 and packet and packet.frames_dir then
     statsClock = 0
@@ -199,6 +203,11 @@ function script.windowMain(dt)
     if not yellowAI.enabled then yellowAI.reset() end
   end
   ui.textWrapped(yellowAI.status)
+  if ui.checkbox('Override AC native flag in yellow zones', yellowFlag.enabled) then
+    yellowFlag.enabled=not yellowFlag.enabled
+    if not yellowFlag.enabled then yellowFlag.reset() end
+  end
+  ui.textWrapped(yellowFlag.status)
   if ui.checkbox('Show Marshal yellow flags (display only)', showCautions) then showCautions = not showCautions end
   ui.text(fresh() and ('LIVE / ' .. packet.method) or 'Waiting for live brain poses')
   if ui.checkbox('Pause capture (baseline FPS measurement)', paused) then paused = not paused end
@@ -213,6 +222,7 @@ function script.windowMain(dt)
 end
 
 ac.onRelease(function()
+  yellowFlag.reset()
   yellowAI.reset()
   releaseCamera()
   for _, entry in pairs(shots) do entry.shot:dispose() end
