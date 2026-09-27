@@ -279,6 +279,24 @@ These checks require no API key and do not establish GPU performance or live ren
 
 ## Coordinates
 
+### Yellow caution zones (display only)
+
+Active incidents, including slow-car escorts, colour the 2D track and minimap yellow from
+200 m before to 50 m after their current track position. Predictions alone do not declare
+a yellow zone. Overlaps merge and the start/finish boundary wraps; zones disappear when
+their incidents end. This is a demo visualization, not an official marshal-sector system.
+Configure `scene.yellow_before_m` and `scene.yellow_after_m`, or set
+`scene.yellow_zones_enabled = false` to disable it; restart the bridge and refresh the page.
+No AI controls or native game flags are changed by this feature.
+
+For a future 3D view, use a translucent yellow ribbon beside the road with entry/exit markers,
+keeping the road and cars visible. The minimap already displays the same yellow zones.
+The installed CSP 0.2.11 SDK exposes `ui.drawRaceFlag(ac.FlagType.Caution)` for a flag in
+the normal HUD position and `physics.overrideRacingFlag(...)` for native flag override.
+The SDK requires restoring `ac.FlagType.None` to release that override. Neither API has
+been enabled or live-tested here. Prefer display-only first; native override needs session,
+timeout and unload cleanup and must not mask more important game flags.
+
 Live response now uses one drone per car, including retries and warning-to-incident upgrades.
 Warning scores are rechecked while active; alert coordinates and drone targets follow current telemetry.
 Recovered moving cars clear after `detection.clear_after_s` (0.75 s), including departure beyond

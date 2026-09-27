@@ -1,6 +1,7 @@
 // Race-control dashboard: listens to telemetry (8765) and brain (8766), draws the 2D map,
 // and hands the same state to the 3D view (view3d.js) and the fly-brain viewer (flybrain3d.js).
 
+import { drawCautionZones } from './caution-zones.js?v=1';
 const TEL_URL = "ws://localhost:8765";
 const BRAIN_URL = "ws://localhost:8766";
 const VER = new URL(import.meta.url).search;   // "?v=N" from index.html, passed on so modules refresh together
@@ -164,6 +165,7 @@ function draw2d(now) {
   cl.forEach((p, i) => { const [a, b] = P(p[1], p[3]); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); });
   ctx.closePath();
   ctx.strokeStyle = css("--track"); ctx.lineWidth = Math.max(6, 12 * xf.s); ctx.stroke();
+  drawCautionZones(ctx, state.track, state.events.values(), (x, z) => P(x, z), Math.max(6, 12 * xf.s));
   const [sx, sy] = P(cl[0][1], cl[0][3]);
   ctx.fillStyle = "#fff"; ctx.fillRect(sx - 2, sy - 8, 4, 16);
 
@@ -217,6 +219,7 @@ function drawMinimap() {
   mctx.beginPath();
   state.track.centerline.forEach((p, i) => { const [a, b] = P(p[1], p[3], t); i ? mctx.lineTo(a, b) : mctx.moveTo(a, b); });
   mctx.closePath(); mctx.strokeStyle = "#56625f"; mctx.lineWidth = 3; mctx.stroke();
+  drawCautionZones(mctx, state.track, state.events.values(), (x, z) => P(x, z, t), 3);
   const flagged = new Set([...state.events.values()].flatMap((e) => e.car_ids));
   for (const c of carsPlayerLast()) {
     const [a, b] = P(c.x, c.z, t);

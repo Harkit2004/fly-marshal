@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { cautionRanges, drawCautionZones } from '../dashboard/caution-zones.js';
+const event = (p) => ({type:'incident', track_pos:p});
+const rounded = (r) => r.map(pair => pair.map(n => +n.toFixed(6)));
+assert.deepEqual(rounded(cautionRanges([event(.5)], 1000)), [[.3,.55]]);
+assert.deepEqual(rounded(cautionRanges([event(.1)], 1000)), [[0,.15],[.9,1]]);
+assert.deepEqual(rounded(cautionRanges([event(.5),event(.6)], 1000)), [[.3,.65]]);
+assert.deepEqual(cautionRanges([],1000), []);
+assert.deepEqual(cautionRanges([{type:'predicted',track_pos:.5}],1000), []);
+assert.deepEqual(cautionRanges([event(.5)],1000,{yellow_zones_enabled:false}), []);
+assert.deepEqual(cautionRanges([event(.5)],100), [[0,1]]);
+const lines=[];
+const ctx={save(){},restore(){},beginPath(){},stroke(){},moveTo(...p){lines.push(p)},lineTo(...p){lines.push(p)}};
+drawCautionZones(ctx,{length_m:1000,centerline:[[0,0,0,0],[.5,500,0,0]]},[event(.3)],(x,z)=>[x,z],6);
+assert.deepEqual(lines.map(p=>p.map(n=>Math.round(n))), [[100,0],[350,0]]);
+console.log('PASS: caution buffers, lap wrap, overlap, removal, toggle, prediction exclusion and drawing boundaries');
