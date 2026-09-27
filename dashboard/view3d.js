@@ -28,6 +28,9 @@ const CFG = {
   board_gap_m: 4,           // between track edge and sponsor boards
   board_height_m: 1.2,
   panel_length_m: 14,
+  railing_depth_m: 0.25,
+  railing_post_spacing_m: 4,
+  railing_color: "#89959f",
   drone_scale: 3,           // drones are tiny at track scale; exaggerate for visibility
   car_scale: 1.4,
   kerb_radius_m: 220,       // tighter than this gets kerbs + run-off
@@ -35,6 +38,7 @@ const CFG = {
   terrain_detail: 220,
 };
 const SPONSOR_DIR = "assets/sponsors/";
+const SPONSOR_VERSION = "17";
 const MODEL_DIR = "assets/models/";
 
 const Z = (z) => (CFG.mirror_z ? -z : z);
@@ -45,7 +49,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // ---------- assets ----------
 async function loadSponsors() {
   let list = [];
-  try { list = await (await fetch(SPONSOR_DIR + "sponsors.json")).json(); } catch { /* fallback */ }
+  try { list = await (await fetch(SPONSOR_DIR + "sponsors.json?v=" + SPONSOR_VERSION, { cache: "no-cache" })).json(); } catch { /* fallback */ }
   if (!list.length) list = [{ name: "YOUR SPONSOR", bg: "#ffffff", fg: "#111111" }];
   return Promise.all(list.map(async (s) => {
     let img = null;
@@ -53,27 +57,34 @@ async function loadSponsors() {
       img = await new Promise((res) => {
         const im = new Image();
         im.onload = () => res(im); im.onerror = () => res(null);
-        im.src = SPONSOR_DIR + s.file;
+        im.src = SPONSOR_DIR + s.file + "?v=" + SPONSOR_VERSION;
       });
     }
-    return { ...s, board: sponsorTexture(s, img, 1024, 96), roof: sponsorTexture(s, img, 512, 256) };
+    return { ...s, sourceImage: img, board: sponsorTexture(s, img, 1024, 128), roof: sponsorTexture(s, img, 512, 256) };
   }));
 }
 
-function sponsorTexture(s, img, w, h) {
+function sponsorTexture(s, img, w, h, physicalAspect = w / h, copies = 1) {
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   const g = c.getContext("2d");
   g.fillStyle = s.bg || "#ffffff"; g.fillRect(0, 0, w, h);
-  if (img) {
-    const k = Math.min((w * 0.8) / img.width, (h * 0.8) / img.height);
-    g.drawImage(img, (w - img.width * k) / 2, (h - img.height * k) / 2, img.width * k, img.height * k);
-  } else {
-    g.fillStyle = s.fg || "#111111";
-    g.font = `800 ${Math.floor(h * 0.55)}px "Segoe UI", system-ui, sans-serif`;
-    g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(s.name.toUpperCase(), w / 2, h / 2 + 2, w * 0.9);
+  // Account for the physical panel aspect, not just the atlas cell dimensions.
+  const pixelAspect = (w / h) / physicalAspect, cell = w / copies;
+  for (let i = 0; i < copies; i++) {
+    if (img) {
+      const k = Math.min((cell * 0.82) / (img.width * pixelAspect), (h * 0.72) / img.height);
+      const dw = img.width * k * pixelAspect, dh = img.height * k;
+      g.drawImage(img, i * cell + (cell - dw) / 2, (h - dh) / 2, dw, dh);
+    } else {
+      g.save(); g.translate((i + 0.5) * cell, h / 2); g.scale(pixelAspect, 1);
+      g.fillStyle = s.fg || "#111111";
+      g.font = `800 ${Math.floor(h * 0.5)}px "Segoe UI", system-ui, sans-serif`;
+      g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(s.name.toUpperCase(), 0, 0, cell * 0.82 / pixelAspect); g.restore();
+    }
   }
+  g.fillStyle = s.accent || s.fg || "#152144"; g.fillRect(0, h * 0.94, w, h * 0.06);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
@@ -97,11 +108,13 @@ async function loadModels(cfg = {}) {
 
 // all sponsors side by side in one texture, so a barrier can be one continuous mesh
 function sponsorAtlas(sponsors) {
-  const W = 512, H = 64, n = sponsors.length;
+  const W = 512, H = 128, n = sponsors.length;
   const c = document.createElement("canvas"); c.width = W * n; c.height = H;
   const g = c.getContext("2d");
   sponsors.forEach((s, i) => {
-    g.drawImage(s.board.image, i * W, 0, W, H);
+    const aspect = CFG.panel_length_m / CFG.board_height_m;
+    const board = sponsorTexture(s, s.sourceImage, W, H, aspect, Math.max(1, Math.round(aspect / 4)));
+    g.drawImage(board.image, i * W, 0, W, H); board.dispose();
     g.fillStyle = "rgba(0,0,0,.35)"; g.fillRect(i * W, 0, 3, H);          // panel seams
   });
   const t = new THREE.CanvasTexture(c);
@@ -356,35 +369,69 @@ export class View3D {
     // (smoothly), and left out on the inside of corners too tight for the offset to stay clean
     const atlas = sponsorAtlas(this.sponsors);
     const nS = this.sponsors.length;
-    const frontMat = new THREE.MeshBasicMaterial({ map: atlas, side: THREE.DoubleSide });
-    const backMat = new THREE.MeshLambertMaterial({ color: 0x3b4146, side: THREE.DoubleSide });
+    const frontMat = new THREE.MeshBasicMaterial({ map: atlas });
+    const backMat = new THREE.MeshStandardMaterial({ color: CFG.railing_color, roughness: 0.58, metalness: 0.45, side: THREE.DoubleSide });
+    const supportPositions = [];
+    const depth = Math.max(0.08, CFG.railing_depth_m);
+    const postSpacing = Math.max(1, CFG.railing_post_spacing_m);
     const raw = grow.map((c) => (c ? 10 : 0));
     const smooth = raw.map((_, i) => { let a = 0; for (let j = -12; j <= 12; j++) a += raw[(i + j + n) % n]; return a / 25; });
     for (const side of [1, -1]) {
       let run = [];
       const flush = () => {
         if (run.length > 3) {
-          const pos = [], back = [], uvs = [], idx = [];
-          let dist = 0, prev = null;
+          const pos = [], outer = [], back = [], caps = [], uvs = [], outerUvs = [], idx = [], backIdx = [];
+          const profile = [0, 0.12, 0.28, 0.38, 0.5, 0.62, 0.78, 0.88, 1];
+          let dist = 0, prev = null, nextPost = 0;
           run.forEach((i) => {
             const extra = CFG.board_gap_m + smooth[i];
-            const p = edge(fr[i], side, extra), q = edge(fr[i], side, extra + 0.25);
+            const p = edge(fr[i], side, extra), q = edge(fr[i], side, extra + depth);
             if (prev) dist += p.distanceTo(prev);
             prev = p;
             const y0 = p.y + 0.15, y1 = y0 + CFG.board_height_m;
             pos.push(p.x, y0, p.z, p.x, y1, p.z);
-            back.push(q.x, y0, q.z, q.x, y1, q.z);
+            // Printed outer fascia clears the corrugations and remains visible from orbit.
+            const ox = q.x + fr[i].nx * side * 0.07, oz = q.z + fr[i].nz * side * 0.07;
+            outer.push(ox, y0, oz, ox, y1, oz);
+            profile.forEach((height, j) => {
+              const ridge = j % 2 ? 0.05 : 0;
+              back.push(q.x + fr[i].nx * side * ridge, y0 + height * CFG.board_height_m, q.z + fr[i].nz * side * ridge);
+            });
+            caps.push(p.x, y1, p.z, q.x, y1, q.z);
+            if (dist >= nextPost || i === run[run.length - 1]) {
+              const post = edge(fr[i], side, extra + depth + 0.08);
+              supportPositions.push({ p: post, heading: fr[i].heading });
+              nextPost = dist + postSpacing;
+            }
             // text must read left-to-right from the track: flip it on the side whose normal faces away
             const u = (side > 0 ? -dist : dist) / (CFG.panel_length_m * nS);
             uvs.push(u, 0, u, 1);
+            outerUvs.push(-u, 0, -u, 1);
           });
-          for (let j = 0; j < run.length - 1; j++) { const a = 2 * j, b = a + 2; idx.push(a, b, a + 1, a + 1, b, b + 1); }
-          for (const [arr, mat] of [[pos, frontMat], [back, backMat]]) {
+          for (let j = 0; j < run.length - 1; j++) {
+            const a = 2 * j, b = a + 2;
+            // Inner and outer faces use opposite winding and UV direction.
+            if (side > 0) idx.push(a, a + 1, b, a + 1, b + 1, b);
+            else idx.push(a, b, a + 1, a + 1, b, b + 1);
+            for (let k = 0; k < profile.length - 1; k++) {
+              const c = j * profile.length + k, d = c + profile.length;
+              backIdx.push(c, d, c + 1, c + 1, d, d + 1);
+            }
+          }
+          const outerIdx = [];
+          for (let j = 0; j < idx.length; j += 3) outerIdx.push(idx[j], idx[j + 2], idx[j + 1]);
+          const outerGeo = new THREE.BufferGeometry();
+          outerGeo.setAttribute("position", new THREE.Float32BufferAttribute(outer, 3));
+          outerGeo.setAttribute("uv", new THREE.Float32BufferAttribute(outerUvs, 2));
+          outerGeo.setIndex(outerIdx); outerGeo.computeVertexNormals();
+          const outerMesh = new THREE.Mesh(outerGeo, frontMat);
+          outerMesh.name = 'Outer sponsor panels'; g.add(outerMesh);
+          for (const [arr, mat, indices, name] of [[pos, frontMat, idx, 'Sponsor panels'], [back, backMat, backIdx, 'Corrugated steel railing'], [caps, backMat, idx, 'Railing top cap']]) {
             const geo = new THREE.BufferGeometry();
             geo.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
             if (mat === frontMat) geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-            geo.setIndex(idx); geo.computeVertexNormals();
-            g.add(new THREE.Mesh(geo, mat));
+            geo.setIndex(indices); geo.computeVertexNormals();
+            const mesh = new THREE.Mesh(geo, mat); mesh.name = name; g.add(mesh);
           }
         }
         run = [];
@@ -395,6 +442,17 @@ export class View3D {
         if (inside && Math.abs(fr[i].k) * extra > 0.35) flush(); else run.push(i);
       }
       flush();
+    }
+    if (supportPositions.length) {
+      const height = CFG.board_height_m + 0.45;
+      const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, height, 0.16), backMat, supportPositions.length);
+      posts.name = 'Railing support posts';
+      const pose = new THREE.Object3D();
+      supportPositions.forEach(({ p, heading }, i) => {
+        pose.position.set(p.x, p.y - 0.2 + height / 2, p.z); pose.rotation.y = -heading;
+        pose.updateMatrix(); posts.setMatrixAt(i, pose.matrix);
+      });
+      posts.instanceMatrix.needsUpdate = true; g.add(posts);
     }
     const postMat = new THREE.MeshLambertMaterial({ color: 0x9aa3a8 });
 
@@ -413,8 +471,9 @@ export class View3D {
     }
     const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 1.6, w), new THREE.MeshLambertMaterial({ color: 0x22262a }));
     beam.position.y = 8; gantry.add(beam);
+    const gantryTexture = sponsorTexture(this.sponsors[0], this.sponsors[0].sourceImage, 1024, 128, (w - 1) / 1.3, 2);
     for (const s of [-1, 1]) {
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(w - 1, 1.3), new THREE.MeshBasicMaterial({ map: this.sponsors[0].board }));
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(w - 1, 1.3), new THREE.MeshBasicMaterial({ map: gantryTexture }));
       sign.position.set(s * 0.51, 8, 0); sign.rotation.y = s * Math.PI / 2; gantry.add(sign);
     }
     gantry.position.copy(f0.p);

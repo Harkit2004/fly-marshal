@@ -184,7 +184,7 @@ def simulate(track, n_cars: int, seconds: float, seed: int):
         for i in range(n_cars):
             kmh = speed[i] * 3.6
             rows.append([
-                round(t, 3), i, f"AI Driver {i + 1}", "synthetic_gt3",
+                round(t, 3), i, f"AI Driver {i + 1}", "synthetic_gt3", "",
                 px[i], c["y"][i], pz[i], kmh, np.degrees((head[i] + np.pi) % (2 * np.pi) - np.pi), yaw_rate[i],
                 0.0, 0.0, accel[i] / 9.81,
                 1.0 if accel[i] > 0.5 else 0.0, min(1.0, max(0.0, -accel[i] / A_BRAKE)), 0.0,

@@ -1,6 +1,8 @@
 [
-  { "name": "Formula Hacks", "bg": "#101010", "fg": "#ffffff" },
-  { "name": "Sponsor One",   "bg": "#ffffff", "fg": "#d7263d" },
-  { "name": "Sponsor Two",   "bg": "#1b998b", "fg": "#ffffff" },
-  { "name": "Sponsor Three", "bg": "#f4a259", "fg": "#101010" }
+  { "name": "Tangerine", "file": "tangerine.png", "tier": "gold", "bg": "#ffffff", "fg": "#f58220", "accent": "#f58220" },
+  { "name": "Ampere", "file": "ampere.png", "tier": "gold", "bg": "#f3f5f8", "fg": "#152144", "accent": "#152144" },
+  { "name": "Ollon", "file": "ollon.png", "tier": "silver", "bg": "#ffffff", "fg": "#494d5a", "accent": "#ec7a43" },
+  { "name": "TELUS", "file": "telus.png", "tier": "silver", "bg": "#f5f7f1", "fg": "#4b286d", "accent": "#66b52b" },
+  { "name": "Red Bull", "file": "red_bull.png", "tier": "community", "bg": "#ffffff", "fg": "#cf202e", "accent": "#152144" },
+  { "name": "AWAKE", "file": "awake.png", "tier": "community", "bg": "#35251e", "fg": "#ffcb35", "accent": "#3e9bb2" }
 ]

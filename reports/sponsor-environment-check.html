@@ -1,0 +1,41 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><base href="/dashboard/">
+<title>Vallelunga sponsor environment check</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>body{margin:0;background:#10202b;font:14px system-ui;color:white}#toolbar{height:54px;display:flex;align-items:center;gap:10px;padding:0 16px}button{padding:8px 12px;border:1px solid #617380;border-radius:5px;background:#203541;color:white;cursor:pointer}#view{height:calc(100vh - 54px)}#status{margin-left:auto}</style></head>
+<body><div id="toolbar"><strong>Vallelunga • Sponsor environment</strong><button id="left">Left panels</button><button id="right">Right panels</button><button id="back">Steel backs</button><button id="overview">Overview</button><span id="status">Loading…</span></div><div id="view"></div>
+<script type="module">
+import {View3D} from './view3d.js?v=16';
+import * as THREE from 'three';
+const status=document.querySelector('#status');
+window.addEventListener('error',e=>status.textContent='ERROR: '+e.message);
+window.addEventListener('unhandledrejection',e=>status.textContent='ERROR: '+e.reason);
+const state={cars:new Map(),prevCars:new Map(),drones:[],prevDrones:new Map(),events:new Map(),t:0};
+const view=new View3D(document.querySelector('#view'),state,{labels:false,feeds:false});
+const track=await (await fetch('/reports/sponsor-environment-track.json')).json();
+await view.setTrack(track);
+const panels=view.trackGroup.children.filter(x=>x.name==='Sponsor panels');
+const missing=view.sponsors.filter(s=>!s.sourceImage).map(s=>s.name);
+status.textContent=missing.length?'MISSING: '+missing.join(', '):`6 logos loaded • ${panels.length} barrier runs`;
+const overviewPos=view.camera.position.clone(),overviewTarget=view.controls.target.clone();
+function inspect(side,back=false){
+ const candidates=panels.filter(m=>{
+  const p=m.geometry.attributes.position,n=m.geometry.attributes.normal;
+  const f=view.frames.reduce((a,b)=>Math.hypot(b.p.x-p.getX(0),b.p.z-p.getZ(0))<Math.hypot(a.p.x-p.getX(0),a.p.z-p.getZ(0))?b:a);
+  return Math.sign(n.getX(0)*f.nx+n.getZ(0)*f.nz)===-side;
+ });
+ const mesh=candidates.sort((a,b)=>b.geometry.attributes.position.count-a.geometry.attributes.position.count)[0];
+ const p=mesh.geometry.attributes.position,n=mesh.geometry.attributes.normal;
+ const i=Math.min(30,p.count-4),at=new THREE.Vector3().fromBufferAttribute(p,i),normal=new THREE.Vector3().fromBufferAttribute(n,i);
+ const tangent=new THREE.Vector3().fromBufferAttribute(p,i+2).sub(at).normalize();
+ at.y+=.6;view.controls.target.copy(at);
+ view.camera.position.copy(at).addScaledVector(normal,back?-12:24).addScaledVector(tangent,back?6:9);view.camera.position.y+=back?3:5;
+ view.camera.lookAt(at);view.controls.update();
+}
+document.querySelector('#left').onclick=()=>inspect(1);
+document.querySelector('#right').onclick=()=>inspect(-1);
+document.querySelector('#back').onclick=()=>inspect(1,true);
+document.querySelector('#overview').onclick=()=>{view.camera.position.copy(overviewPos);view.controls.target.copy(overviewTarget);view.controls.update()};
+inspect(1);
+window.addEventListener('resize',()=>view.resize());
+view.renderer.setAnimationLoop(()=>{view.controls.update();view.renderer.render(view.scene,view.camera)});
+</script></body></html>
