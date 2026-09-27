@@ -30,6 +30,8 @@ def telemetry_report(event: dict, f: dict) -> IncidentReport:
     approach = round(f["gap_behind_m"] / closing, 1) if closing > 1 else None
     parts = [f"Car #{event['car_ids'][0]} {event['kind']}"]
     parts.append("stationary" if stopped else f"moving at {f['speed_kmh']:.0f} km/h")
+    if event.get('expected_speed_kmh') is not None:
+        parts.append(f"normal section speed {event['expected_speed_kmh']:.0f} km/h (live reference)")
     parts.append("ON racing line" if on_line else f"{f['off_line_m']:.0f} m off line")
     if approach is not None:
         parts.append(f"next car arrives in {approach} s")

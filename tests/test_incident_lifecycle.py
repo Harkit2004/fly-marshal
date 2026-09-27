@@ -16,6 +16,7 @@ class LifecycleTests(unittest.TestCase):
         with patch('brain.AnomalyDetector'), patch('brain.RiskPredictor'):
             self.brain = Brain(Track(rows), versus=True)
         self.addCleanup(self.brain.close)
+        self.brain.live_speed.enabled = False  # legacy lifecycle regression coverage
         self.car = dict(car_id=0, x=500., y=0., z=0., track_pos=0., speed_kmh=0., in_pit=False)
         self.feat = dict(speed_kmh=0., speed_deficit_kmh=200., yaw_rate=0., accel=0., wheels_out=0, off_line_m=0.)
         self.brain.features.update = lambda t, cars: {c['car_id']: self.feat for c in cars}
@@ -113,6 +114,28 @@ class LifecycleTests(unittest.TestCase):
         self.car['in_pit'] = True
         for t in (24., 25., 27.): self.brain.tick(t, [self.car])
         self.assertFalse(self.brain.active)
+
+    def test_learned_slowdown_dispatches_without_crash_then_clears(self):
+        ref = self.brain.live_speed
+        ref.enabled = True
+        self.car.update(lap=1, car_model='gt3', speed_kmh=140.)
+        # Actual clean passes from five peers build the reference used by Brain.
+        peers = [dict(self.car,car_id=i,lap=0) for i in range(5)]
+        ref.update(0,peers,{})
+        ref.update(50,[dict(c,lap=1) for c in peers],{})
+        ref.update(51,[dict(c,lap=1,track_pos=.02) for c in peers],{})
+        self.assertEqual(ref.expected(self.car),140.)
+        self.brain.anomaly.score_many = lambda feats: [(0., None) for _ in feats]
+        # The old track reference says no deficit, but the live reference catches it.
+        self.car['speed_kmh']=60.
+        self.feat.update(speed_kmh=60.,speed_deficit_kmh=0.)
+        for t in (60.,61.,62.1): self.brain.tick(t,[self.car])
+        self.assertEqual(self.brain.active[0]['kind'],'limp')
+        self.assertEqual(sum(d.mode=='escort' for d in self.brain.drones),1)
+        self.car['speed_kmh']=130.
+        self.feat['speed_kmh']=130.
+        for t in (63.,64.): self.brain.tick(t,[self.car])
+        self.assertNotIn(0,self.brain.active)
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):

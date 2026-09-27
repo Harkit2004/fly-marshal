@@ -31,6 +31,7 @@ from drones.safety import SafetyLayer
 from drones.sim import Drone
 from ml.detectors import AnomalyDetector, RiskPredictor
 from ml.features import OnlineFeatures
+from ml.live_speed import LiveSpeedReference
 from shared.settings import get
 from shared.config import BRAIN_WS_PORT, DATA, DRONE_COUNT, DRONE_PATROL_ALT, TELEMETRY_WS_PORT
 from shared.schemas import RiskEvent, message
@@ -48,6 +49,8 @@ class Brain:
     def __init__(self, track: Track, versus: bool, fly_brain=None, steer_assist: float = 0.0):
         self.track = track
         self.features = OnlineFeatures(track)
+        self.live_speed = LiveSpeedReference(track.length)
+        print(f"[live-speed] {'enabled: learning clean passes after first observed lap' if self.live_speed.enabled else 'disabled: legacy slow rule'}", flush=True)
         self.anomaly = AnomalyDetector(DATA.parent / "models" / "anomaly.pkl")
         self.risk = RiskPredictor(DATA.parent / "models" / "risk.pkl")
         for name, detector in (("incident", self.anomaly), ("risk", self.risk)):
@@ -117,6 +120,9 @@ class Brain:
                 continue
             racing.append(car)
         scored = dict(zip(racing, self.anomaly.score_many([feats[c] for c in racing])))
+        learning_excluded = set(yellow_controlled or ()) | set(self.active)
+        learning_excluded.update(c for c, (score, _) in scored.items() if score > ANOMALY_ON)
+        self.live_speed.update(t, cars, feats, learning_excluded, self.active.values())
         intentional_slow = {car for car in (yellow_controlled or set()) if car in feats
                             and feats[car]['speed_kmh'] > 5 and feats[car].get('wheels_out',0) < 3
                             and feats[car].get('yaw_excess',abs(feats[car]['yaw_rate'])) < .7
@@ -142,6 +148,9 @@ class Brain:
                            < float(get("detection.slow_max_kmh", 100))
                            and f["speed_deficit_kmh"] > float(get("detection.slow_deficit_kmh", 60))
                            and f["accel"] > -1 and f.get("wheels_out", 0) < 3)
+            if self.live_speed.enabled:
+                moving_slow = (car not in intentional_slow and self.live_speed.ready(t, c)
+                               and self.live_speed.is_slow(c) and f.get('wheels_out', 0) < 3)
             if moving_slow:
                 self.slow_since.setdefault(car, t)
             else:
@@ -160,6 +169,9 @@ class Brain:
                     self.dispatch.assign(act)
                 else:
                     act["kind"] = "limp"
+                if self.live_speed.enabled:
+                    act['expected_speed_kmh'] = round(self.live_speed.expected(c), 1)
+                    act['speed_reference'] = 'live section median'
                 self.clear_since.pop(car, None)
                 self.dispatch.escort(act["id"], car)
                 msgs.append(message("risk", event=act))
@@ -204,6 +216,8 @@ class Brain:
                 if act["kind"] == "limp":
                     # Leaving the original location is expected for an escort.
                     clear = f["speed_deficit_kmh"] < 30 and f["speed_kmh"] > float(get("detection.slow_min_kmh", 5))
+                    if self.live_speed.enabled:
+                        clear = self.live_speed.recovered(c) and f['speed_kmh'] > 5
                     if f["speed_kmh"] <= float(get("detection.slow_min_kmh", 5)):
                         act["kind"] = "stopped"
                         for drone in self.drones:

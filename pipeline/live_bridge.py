@@ -56,6 +56,7 @@ class LogTail:
         self.parts_dir: Path | None = None
         self.next_part = 1
         self.drivers: dict[int, str] = {}
+        self.car_models: dict[int, str] = {}
         self.slow: dict[int, tuple[int, int, int]] = {}      # car -> (race_pos, lap, flags)
         self.pending: dict[int, list] = {}                     # t_ms -> cars (current, incomplete tick)
         self.frames: deque = deque()                           # (t_s, cars)
@@ -79,6 +80,7 @@ class LogTail:
             print(f"[live] following {parts.name}" if parts else "[live] waiting for a new recording")
             self.parts_dir, self.next_part = parts, 1
             self.drivers, self.slow, self.pending = {}, {}, {}
+            self.car_models.clear()
             self.frames.clear()
             self.meta = {}
             self.session += 1            # main loop rebuilds the track for the new session
@@ -119,6 +121,7 @@ class LogTail:
             pos, lap, flags = self.slow.get(car, (0, 0, 0))
             self.pending.setdefault(t, []).append({
                 "car_id": car, "driver": self.drivers.get(car, f"car{car}"),
+                "car_model": self.car_models.get(car, ''),
                 "x": float(f[3]), "y": float(f[4]), "z": float(f[5]), "speed_kmh": float(f[7]),
                 "yaw_rate": float(f[14]), "wheels_out": int(float(f[22])), "track_pos": float(f[24]),
                 "lap": lap, "in_pit": bool(flags & PIT_FLAGS),
@@ -131,7 +134,9 @@ class LogTail:
                 pass
         elif line.startswith("CAR,"):
             _, idx, js = line.split(",", 2)
-            self.drivers[int(idx)] = json.loads(js).get("driver", f"car{idx}")
+            info = json.loads(js)
+            self.drivers[int(idx)] = info.get("driver", f"car{idx}")
+            self.car_models[int(idx)] = info.get('car', '')
         elif line.startswith("META,"):
             self.meta = json.loads(line.split(",", 1)[1])
             print(f"[live] {self.meta.get('trackFull')} · {self.meta.get('sessionName')} · {self.meta.get('cars')} cars")

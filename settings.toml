@@ -46,6 +46,16 @@ predict_ttl_s = 1.0
 incident_max_s = 90.0
 
 # ─────────────────────────────────────────────────────────────────────────────
+[live_speed]
+enabled = true             # false restores the previous fixed-reference slow-car rule
+section_m = 50.0
+min_passes = 5             # independent clean car/lap passes per model and section
+history_passes = 40
+start_grace_s = 45.0       # also excludes each car's entire first observed lap
+slow_ratio = 0.65
+min_deficit_kmh = 30.0
+recovery_ratio = 0.80
+
 [drones]
 count = 3                  # drone 0 is the fly-brain drone, the rest are PID
 max_speed_mps = 130.0      # simulated drone: 468 km/h maximum, slows near target

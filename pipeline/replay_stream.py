@@ -56,7 +56,8 @@ def load(session: Path):
     df["in_pit"] = df["in_pit"].astype(bool)
     ticks = []
     for t, g in df.groupby("t", sort=True):
-        cars = g[FRAME_FIELDS].round(3).to_dict("records")
+        fields = FRAME_FIELDS + (['car_model'] if 'car_model' in g.columns else [])
+        cars = g[fields].fillna({'car_model': ''}).round(3).to_dict("records")
         ticks.append((float(t), json.dumps({"type": "frames", "t": float(t), "cars": cars})))
     return track_msg, ticks
 

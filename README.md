@@ -279,6 +279,38 @@ These checks require no API key and do not establish GPU performance or live ren
 
 ## Coordinates
 
+### Live section speed reference (optional and reversible)
+
+`[live_speed]` in `settings.toml` enables a separate, non-ML slowdown detector in
+`ml/live_speed.py`. Restart the launcher after changing it. Set `enabled = false`
+to restore the old track-reference slow-car rule. The trained crash models are unchanged.
+
+The learner divides this session's track into approximately 50 m sections and groups
+cars by model. Live and replay streams preserve model metadata; if it is absent, a car
+learns from its own passes only. Each car/lap/section contributes at most one median
+speed, so crawling or repeated telemetry cannot dominate. The reference is the median
+of the latest 40 accepted passes; five are required before detection begins.
+
+The entire first observed lap of each car and the first 45 seconds after connecting are
+excluded from learning and this new slowdown detector. This deliberately delays readiness
+after joining mid-race too. Pit visits, off-track/spinning cars, ML anomalies, active alerts,
+AI yellow control and the area around incidents (including the braking approach) are
+excluded. Once established, passes below 80% of the reference cannot lower it: even
+repeated blocked laps cannot teach it that crawling is normal. Before enough clean data
+exists, there is no reliable way to distinguish all congestion from normal pace; the
+learner is conservative but cannot guarantee a clean initial reference.
+
+A moving car below 65% of the learned speed AND at least 30 km/h slower for two seconds
+gets the existing slow-car incident and drone escort, without needing a previous crash.
+Multiple cars in a blockage may be flagged; those slow passes do not update the reference.
+Deliberate AI yellow slowing is still excluded from slow alerts. Recovery uses 80% of the
+local reference; entering an unlearned section releases the escort after the usual clear
+delay rather than guessing its normal speed. Reports include the expected section speed.
+References are in memory only and reset with a new session/track, restart or backwards
+telemetry time. No log files, trained model weights or AC Lua scripts are modified by this
+feature. Automated tests cover startup, contamination, model separation and drone lifecycle;
+live race acceptance remains to be checked.
+
 ### Yellow caution zones and experimental AI control
 
 Active incidents, including slow-car escorts, colour the 2D track and minimap yellow from
