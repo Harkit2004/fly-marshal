@@ -493,7 +493,16 @@ export class View3D {
       obj.scale.setScalar(cfg.scale || 1);
       obj.rotation.y = cfg.rotation_y || 0;
       obj.position.y = cfg.y_offset || 0;
-      obj.traverse((o) => { if (/wheel|tyre|tire/i.test(o.name)) wheels.push(o); });
+      // glTF splits multi-material wheels into children. Spin the pivot once,
+      // never its matching descendants as well (which would double the rotation).
+      const wheelName = /wheel|tyre|tire/i;
+      obj.traverse((o) => {
+        if (!wheelName.test(o.name)) return;
+        for (let p = o.parent; p && p !== obj; p = p.parent) {
+          if (wheelName.test(p.name)) return;
+        }
+        wheels.push(o);
+      });
       root.add(obj);
     } else {
       const livery = new THREE.MeshLambertMaterial({ color: LIVERY[id % LIVERY.length] });

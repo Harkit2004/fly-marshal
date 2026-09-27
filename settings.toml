@@ -145,7 +145,7 @@ mirror_z = false           # flip if the 3D track looks mirrored compared with t
 # Custom 3D models (glTF .glb). Put files in dashboard/assets/models/.
 # Leave `file` empty to use the built-in procedural model.
 [models.car]
-file = ""                  # e.g. "formula.glb"
+file = "tatuus_fa01.glb"   # locally converted AC Tatuus FA01; empty restores procedural cars
 scale = 1.0                # model units -> metres
 rotation_y = 0.0           # radians; the car must face +X
 y_offset = 0.0

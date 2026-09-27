@@ -16,6 +16,18 @@ hide_procedural = true
 
 ## Cars
 
+The local demo uses `tatuus_fa01.glb`, converted from the installed AC Tatuus FA01.
+It has embedded diffuse textures, +X forward orientation, ground-level tyres and
+four wheel pivots. Duplicate low-resolution cockpit and blurred wheel meshes are
+removed; body meshes are joined to reduce draw calls. All cars use the same supplied
+textures; telemetry IDs and the player indicator still distinguish them.
+Set `[models.car].file = ""` to restore the procedural car and restart the launcher.
+The GLB is local and ignored by Git. Rebuild with Blender 4.2:
+
+```powershell
+& 'C:/Program Files/Blender Foundation/Blender 4.2/blender.exe' --background --factory-startup --python tools/convert_tatuus.py -- 'B:/SteamLibrary/steamapps/common/assettocorsa/content/cars/tatuusfa1/unpacked-tatuusfa1/Tatus_Abarth_LOD_0.fbx' dashboard/assets/models/tatuus_fa01.glb
+```
+
 - Forward must be **+X** after `rotation_y` (radians). The model is multiplied by `scene.car_scale` (settings.toml), so build it at real size in metres.
 - Meshes whose names contain `wheel`, `tyre` or `tire` spin with the car's speed.
 - Every car gets the same model. Liveries and sponsor decals only apply to the procedural car.
