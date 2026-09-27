@@ -28,22 +28,24 @@ class SessionTests(unittest.TestCase):
         self.tail.pending[20] = [{}]
         self.tail.drivers[4] = 'Old driver'
         self.tail.car_models[4] = 'old_model'
+        self.tail.car_skins[4] = 'old_skin'
         self.tail.slow[4] = (1, 5, 0)
         self.tail.meta = {'trackFull': 'spa'}
         self.tail.next_part = 99
         self.start('monza')
         self.assertEqual(self.tail.session, 2)
         self.assertEqual(self.tail.next_part, 1)
-        for value in (self.tail.frames, self.tail.pending, self.tail.drivers, self.tail.car_models, self.tail.slow, self.tail.meta):
+        for value in (self.tail.frames, self.tail.pending, self.tail.drivers, self.tail.car_models, self.tail.car_skins, self.tail.slow, self.tail.meta):
             self.assertFalse(value)
 
     def test_live_frames_preserve_model_for_speed_reference(self):
-        self.tail.handle('CAR,1,{"driver":"Driver","car":"gt3"}')
+        self.tail.handle('CAR,1,{"driver":"Driver","car":"gt3","skin":"team_red"}')
         fields=['0']*25
         fields[0]='F'; fields[1]='1000'; fields[2]='1'; fields[7]='140'; fields[24]='0.25'
         self.tail.handle(','.join(fields))
         self.tail.flush_pending()
         self.assertEqual(self.tail.frames[0][1][0]['car_model'],'gt3')
+        self.assertEqual(self.tail.frames[0][1][0]['skin'],'team_red')
 
     def test_part_removed_during_read_does_not_crash(self):
         parts = self.start('spa')

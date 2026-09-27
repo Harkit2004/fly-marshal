@@ -17,6 +17,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { CarSkins } from './car-skins.js';
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { cautionRanges } from './caution-zones.js?v=1';
 
@@ -86,7 +87,8 @@ async function loadModels(cfg = {}) {
     if (!entry?.file) return null;
     try {
       const g = await loader.loadAsync(MODEL_DIR + entry.file);
-      return { ...entry, scene: g.scene, animations: g.animations };
+      const skins = entry.skin_manifest ? await CarSkins.load(MODEL_DIR + entry.skin_manifest) : null;
+      return { ...entry, scene: g.scene, animations: g.animations, skins };
     } catch (e) { console.warn("model failed", entry.file, e); return null; }
   };
   const m = cfg.models || {};
@@ -230,6 +232,7 @@ export class View3D {
     Object.assign(CFG, st.scene || {});
     const models = await loadModels(st);
     if (revision !== this.trackRevision) return;
+    this.models?.car?.skins?.dispose();
     this.models = models;
     // anything built before the models arrived is rebuilt with them
     for (const c of this.cars.values()) this.scene.remove(c.mesh);
@@ -488,11 +491,13 @@ export class View3D {
     const root = new THREE.Group();
     const cfg = this.models?.car;
     const wheels = [];
+    const skinParts = [];
     if (cfg) {
       const obj = cloneSkinned(cfg.scene);
       obj.scale.setScalar(cfg.scale || 1);
       obj.rotation.y = cfg.rotation_y || 0;
       obj.position.y = cfg.y_offset || 0;
+      obj.traverse(o => { if (o.isMesh) skinParts.push({mesh: o, base: o.material}); });
       // glTF splits multi-material wheels into children. Spin the pivot once,
       // never its matching descendants as well (which would double the rotation).
       const wheelName = /wheel|tyre|tire/i;
@@ -539,7 +544,7 @@ export class View3D {
     }
     root.scale.setScalar(CFG.car_scale);
     this.scene.add(root);
-    return { mesh: root, wheels, label, yaw: 0 };
+    return { mesh: root, wheels, label, yaw: 0, skinParts };
   }
 
   makeLabel(text) {
@@ -742,6 +747,7 @@ export class View3D {
     for (const c of s.cars.values()) {
       let car = this.cars.get(c.car_id);
       if (!car) { car = this.makeCar(c.car_id); this.cars.set(c.car_id, car); }
+      this.models?.car?.skins?.apply(car, c.car_model, c.skin);
       const p0 = s.prevCars.get(c.car_id) || c;
       const target = V(p0.x + (c.x - p0.x) * aC, p0.y + (c.y - p0.y) * aC, p0.z + (c.z - p0.z) * aC);
       const dx = c.x - p0.x, dz = Z(c.z) - Z(p0.z);

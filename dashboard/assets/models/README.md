@@ -19,8 +19,20 @@ hide_procedural = true
 The local demo uses `tatuus_fa01.glb`, converted from the installed AC Tatuus FA01.
 It has embedded diffuse textures, +X forward orientation, ground-level tyres and
 four wheel pivots. Duplicate low-resolution cockpit and blurred wheel meshes are
-removed; body meshes are joined to reduce draw calls. All cars use the same supplied
-textures; telemetry IDs and the player indicator still distinguish them.
+removed; body meshes are joined to reduce draw calls. Each Tatuus now uses its recorded
+skin ID. The live logger's `skin` field is forwarded to the viewer; new converted replay
+CSVs preserve it too. Older CSVs without that field retain the base textures.
+The launcher incrementally converts installed diffuse skin overrides to local PNGs with
+`tools/prepare_car_skins.py`. It matches original AC material texture filenames, including
+body paint, logos and cockpit protection. Shared geometry stays unchanged; materials are
+cached per skin and assigned separately to each car. Missing overrides inherit the GLB's
+base texture. Other car models never receive a Tatuus skin just because a skin name matches.
+Skin-specific shader effects and CSP procedural paint are not reproduced.
+
+`[models.car].skin_manifest = "skins/tatuusfa1/manifest.json"` enables the mapping.
+Remove that setting to return to one base livery. Restart the launcher and refresh the
+dashboard after installing/changing skins. Converted images remain local and ignored by
+Git. Native AC files and the logger are not modified.
 Set `[models.car].file = ""` to restore the procedural car and restart the launcher.
 The GLB is local and ignored by Git. Rebuild with Blender 4.2:
 
@@ -30,7 +42,8 @@ The GLB is local and ignored by Git. Rebuild with Blender 4.2:
 
 - Forward must be **+X** after `rotation_y` (radians). The model is multiplied by `scene.car_scale` (settings.toml), so build it at real size in metres.
 - Meshes whose names contain `wheel`, `tyre` or `tire` spin with the car's speed.
-- Every car gets the same model. Liveries and sponsor decals only apply to the procedural car.
+- Every car gets the same model. Recorded Tatuus skins apply to matching Tatuus entries;
+  the procedural fallback retains its generated liveries and sponsor decals.
 
 ## Drones
 

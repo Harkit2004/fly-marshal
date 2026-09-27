@@ -3,6 +3,7 @@ numpy>=1.26
 pandas>=2.1
 websockets>=13
 pyarrow>=15
+Pillow>=10                 # local AC skin textures -> browser PNG
 
 # ML
 # pinned: models/*.pkl were saved with these; other versions may not load them

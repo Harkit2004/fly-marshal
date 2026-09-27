@@ -26,7 +26,7 @@ from typing import Literal, Optional
 # telemetry.csv columns. Most come straight from the VRC Race Logger F stream
 # (15 Hz, every car); lap / position / in_pit are held from its 1 Hz S stream.
 TELEMETRY_COLUMNS = [
-    "t", "car_id", "driver", "car_model",
+    "t", "car_id", "driver", "car_model", "skin",
     "x", "y", "z", "speed_kmh", "heading_deg", "yaw_rate",   # yaw_rate rad/s, heading -180..180
     "acc_x", "acc_y", "acc_z",                              # G: lateral, vertical, longitudinal
     "gas", "brake", "steer", "gear",

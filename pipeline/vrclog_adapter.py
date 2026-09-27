@@ -100,6 +100,7 @@ def telemetry_frame(rd) -> pd.DataFrame:
         parts.append(pd.DataFrame({
             "t": np.round(t, 3), "car_id": ci,
             "driver": rd.cars[ci].get("driver", f"car{ci}"), "car_model": rd.cars[ci].get("car", ""),
+            "skin": rd.cars[ci].get("skin", ""),
             "x": f["x"], "y": f["y"], "z": f["z"], "speed_kmh": f["speed"],
             "heading_deg": f["compass"], "yaw_rate": f["yaw_rate"],
             "acc_x": f["acc_x"], "acc_y": f["acc_y"], "acc_z": f["acc_z"],

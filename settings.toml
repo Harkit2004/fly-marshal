@@ -146,6 +146,7 @@ mirror_z = false           # flip if the 3D track looks mirrored compared with t
 # Leave `file` empty to use the built-in procedural model.
 [models.car]
 file = "tatuus_fa01.glb"   # locally converted AC Tatuus FA01; empty restores procedural cars
+skin_manifest = "skins/tatuusfa1/manifest.json"
 scale = 1.0                # model units -> metres
 rotation_y = 0.0           # radians; the car must face +X
 y_offset = 0.0

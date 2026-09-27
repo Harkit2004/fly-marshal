@@ -31,6 +31,7 @@ data/runtime/
 
 # Custom 3D models (can be large / licensed)
 dashboard/assets/models/*.glb
+dashboard/assets/models/skins/
 dashboard/assets/models/*.gltf
 dashboard/assets/models/*.bin
 !dashboard/assets/models/dji_fpv_combo.glb

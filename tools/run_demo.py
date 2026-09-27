@@ -54,6 +54,13 @@ def main():
     env["PYTHONUNBUFFERED"] = "1"
     if args.game_feeds:
         env["MARSHAL_GAME_FEEDS"] = "1"
+    from shared.settings import get
+    if get('models.car.skin_manifest'):
+        from tools.prepare_car_skins import prepare
+        try:
+            prepare()
+        except (OSError, ValueError, ImportError) as exc:
+            print(f'[skins] Could not update local skins: {exc}; using existing textures.', flush=True)
     stream = ["-m", "pipeline.live_bridge"] if args.live else [
         "-m", "pipeline.replay_stream", "--session", args.session, "--start", "40", "--loop"]
     commands = [stream, ["brain.py"], ["-m", "http.server", str(DASHBOARD_PORT), "--bind", "127.0.0.1", "--directory", "dashboard"]]
