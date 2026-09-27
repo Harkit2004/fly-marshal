@@ -109,6 +109,8 @@ selected_drone = 0          # main_camera drone; also enable takeover in the in-
 # ─────────────────────────────────────────────────────────────────────────────
 [scene]
 yellow_zones_enabled = true # false restores the plain track map
+yellow_3d_enabled = true    # roadside ribbons and zone boundary markers
+yellow_hud_enabled = true   # display-only CSP flag, independent of camera capture
 yellow_before_m = 200.0     # upstream buffer along the racing direction
 yellow_after_m = 50.0       # downstream buffer; moving incidents carry their zone
 player_car_id = 0           # local AC player car; green map marker and red 3D arrow

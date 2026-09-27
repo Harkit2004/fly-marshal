@@ -8,6 +8,28 @@ local poll, statsClock, cursor, sequence = 0, 0, 0, 0
 local paused, mainAllowed = false, false
 local lastError, saved, captureMs = '', 0, 0
 local mainId, cameraAge = nil, 0
+local cautionInbox = ac.getFolder(ac.FolderID.Root) .. '/logs/marshal_cautions.json'
+local cautionPacket, showCautions = nil, true
+
+function script.drawCautionHUD()
+  local p = cautionPacket
+  if not showCautions or not p or p.source ~= 'live' or type(p.sent_at) ~= 'number'
+      or math.abs(os.time() - p.sent_at) >= 2 or type(p.ranges) ~= 'table'
+      or p.track_id ~= ac.getTrackFullID('/') then return end
+  local car = ac.getCar(0)
+  if not car or car.isInPit or car.isInPitlane then return end
+  -- Leave AC's native flags visible: never override a black/blue/checkered flag.
+  local native = ac.getSim().raceFlagType
+  if native ~= ac.FlagType.None then return end
+  local pos = car.splinePosition % 1
+  for _, zone in ipairs(p.ranges) do
+    if type(zone) == 'table' and type(zone[1]) == 'number' and type(zone[2]) == 'number'
+        and pos >= zone[1] and pos <= zone[2] then
+      ui.drawRaceFlag(ac.FlagType.Caution)
+      return
+    end
+  end
+end
 
 local function releaseCamera()
   if camera then camera:dispose(); camera = nil end
@@ -97,6 +119,8 @@ function script.update(dt)
   poll, statsClock = poll + dt, statsClock + dt
   if poll >= 0.1 then
     poll = 0
+    local cautionOK, cautionData = pcall(function() return JSON.parse(io.load(cautionInbox) or '{}') end)
+    cautionPacket = cautionOK and type(cautionData) == 'table' and cautionData or nil
     local ok, parsed = pcall(function() return JSON.parse(io.load(inbox) or '{}') end)
     if ok and type(parsed) == 'table' and (not packet or packet.run_id ~= parsed.run_id) then nextCapture = {} end
     packet = ok and type(parsed) == 'table' and parsed or nil
@@ -157,6 +181,7 @@ end
 
 function script.windowMain(dt)
   ui.text('Marshal Drone Cams')
+  if ui.checkbox('Show Marshal yellow flags (display only)', showCautions) then showCautions = not showCautions end
   ui.text(fresh() and ('LIVE / ' .. packet.method) or 'Waiting for live brain poses')
   if ui.checkbox('Pause capture (baseline FPS measurement)', paused) then paused = not paused end
   if ui.checkbox('Allow main-camera takeover (spectating only)', mainAllowed) then

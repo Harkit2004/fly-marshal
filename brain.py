@@ -23,6 +23,7 @@ from websockets.asyncio.server import broadcast, serve
 from cv.report import telemetry_report
 from cv.worker import VisionWorker
 from drones.game_feeds import GameFeeds
+from drones.caution_feed import CautionFeed
 from drones.dispatcher import Dispatcher
 from drones.flybrain_real import RealFlyBrainAdapter
 from drones.pilots import FlyBrainPilot, PIDPilot
@@ -250,6 +251,8 @@ async def main():
     args = ap.parse_args()
     fly_brain = RealFlyBrainAdapter.load()     # None -> placeholder fly
     feeds = GameFeeds()
+    cautions = CautionFeed()
+    track_id = None
     vision = VisionWorker()
 
     async def handler(ws):
@@ -281,6 +284,7 @@ async def main():
                                 await asyncio.to_thread(brain.close)
                                 brain = None
                         if m.get("type") == "track":
+                            track_id = m.get("track_id")
                             source_live = m.get("source") == "live"
                             cars, last_telemetry = [], 0.0
                             feeds.reset(source_live)
@@ -298,6 +302,10 @@ async def main():
                                 emit(out)
                         if brain and last_telemetry:
                             age = time.monotonic() - last_telemetry
+                            try:
+                                cautions.publish(brain, session_id, track_id, source_live, age)
+                            except OSError:
+                                pass  # HUD file failure must not stop detection or drone control
                             if age > 15 and feeds.live:
                                 feeds.reset(False)
                                 vision.reset()

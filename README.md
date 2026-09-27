@@ -289,13 +289,21 @@ Configure `scene.yellow_before_m` and `scene.yellow_after_m`, or set
 `scene.yellow_zones_enabled = false` to disable it; restart the bridge and refresh the page.
 No AI controls or native game flags are changed by this feature.
 
-For a future 3D view, use a translucent yellow ribbon beside the road with entry/exit markers,
-keeping the road and cars visible. The minimap already displays the same yellow zones.
-The installed CSP 0.2.11 SDK exposes `ui.drawRaceFlag(ac.FlagType.Caution)` for a flag in
-the normal HUD position and `physics.overrideRacingFlag(...)` for native flag override.
-The SDK requires restoring `ac.FlagType.None` to release that override. Neither API has
-been enabled or live-tested here. Prefer display-only first; native override needs session,
-timeout and unload cleanup and must not mask more important game flags.
+The 3D view now adds translucent yellow roadside ribbons and YELLOW/END markers using the
+same merged zones. Geometry is refreshed at most 5 times/second, and removed resources are
+disposed. Disable with `scene.yellow_3d_enabled = false`.
+
+The installed Marshal Drone Cams Lua app also reads `<AC>/logs/marshal_cautions.json` and
+uses `ui.drawRaceFlag(ac.FlagType.Caution)` to display yellow in the normal in-game flag
+position when player car 0 enters a zone. It runs with its window closed and with camera
+capture paused or disabled. Existing native flags take precedence. It draws no flag in
+pits, outside a zone, on another track, or when the feed expires. The brain publishes this
+file only for fresh live telemetry, never replay. No native flag state or AI is modified.
+Disable with `scene.yellow_hud_enabled = false` (restart brain) or uncheck "Show Marshal
+yellow flags" in the Lua app. Restart AC after installing the updated app and restart the
+launcher after upgrading the brain. Real in-game rendering remains an acceptance check;
+Lua behaviour is tested with mocked CSP functions. The 3D rendering/removal was visually
+verified using a labelled test track.
 
 Live response now uses one drone per car, including retries and warning-to-incident upgrades.
 Warning scores are rechecked while active; alert coordinates and drone targets follow current telemetry.

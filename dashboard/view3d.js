@@ -18,6 +18,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
+import { cautionRanges } from './caution-zones.js?v=1';
 
 const DEFAULT_HALF_WIDTH = 6;
 const CFG = {
@@ -210,6 +211,7 @@ export class View3D {
 
   // ---------- track ----------
   resetSession() {
+    this.clearCautions();
     this.trackRevision = (this.trackRevision || 0) + 1;
     if (this.trackGroup) this.scene.remove(this.trackGroup);
     this.trackGroup = null;
@@ -220,6 +222,7 @@ export class View3D {
   }
 
   async setTrack(track) {
+    this.clearCautions();
     const revision = this.trackRevision = (this.trackRevision || 0) + 1;
     await this.ready;
     if (revision !== this.trackRevision) return;
@@ -649,10 +652,80 @@ export class View3D {
     return leader ? this.cars.get(leader.car_id)?.mesh.position.clone() : this.center?.clone();
   }
 
+  clearCautions() {
+    if (this.cautionGroup) {
+      this.scene.remove(this.cautionGroup);
+      this.cautionGroup.traverse(o => {
+        o.geometry?.dispose();
+        if (o.material) { o.material.map?.dispose(); o.material.dispose(); }
+      });
+    }
+    this.cautionGroup = null; this.cautionKey = null;
+  }
+
+  updateCautions(now) {
+    const track = this.state.track;
+    if (!track || !this.frames) { this.clearCautions(); return; }
+    if (now < (this.nextCautionUpdate || 0)) return;
+    this.nextCautionUpdate = now + 200;
+    const ranges = track.settings?.scene?.yellow_3d_enabled === false ? []
+      : cautionRanges(this.state.events.values(), track.length_m, track.settings?.scene);
+    const key = JSON.stringify(ranges);
+    if (key === this.cautionKey) return;
+    this.clearCautions(); this.cautionKey = key;
+    if (!ranges.length) return;
+    const group = this.cautionGroup = new THREE.Group();
+    this.scene.add(group);
+    const cl = track.centerline, frames = this.frames, vertices = [];
+    const edge = (i, f, side, offset) => {
+      const a = frames[i], b = frames[(i + 1) % frames.length];
+      const aw = (side > 0 ? a.wl : a.wr) + offset;
+      const bw = (side > 0 ? b.wl : b.wr) + offset;
+      return [a.p.x + side*a.nx*aw + f*(b.p.x + side*b.nx*bw - a.p.x - side*a.nx*aw),
+        a.p.y + f*(b.p.y-a.p.y) + .35,
+        a.p.z + side*a.nz*aw + f*(b.p.z + side*b.nz*bw - a.p.z - side*a.nz*aw)];
+    };
+    const at = (t, side, offset) => {
+      const i = Math.max(0, cl.findLastIndex(p => p[0] <= t));
+      const end = i+1 === cl.length ? 1 : cl[i+1][0];
+      return edge(i, (t-cl[i][0]) / Math.max(1e-9, end-cl[i][0]), side, offset);
+    };
+    for (let i=0; i<cl.length; i++) {
+      const start = cl[i][0], end = i+1 === cl.length ? 1 : cl[i+1][0];
+      for (const [lo, hi] of ranges) {
+        const a = Math.max(start, lo), b = Math.min(end, hi);
+        if (b <= a) continue;
+        for (const side of [-1, 1]) {
+          const u=(a-start)/(end-start), v=(b-start)/(end-start);
+          const p=edge(i,u,side,.5), q=edge(i,u,side,2.5), r=edge(i,v,side,.5), s=edge(i,v,side,2.5);
+          vertices.push(...p,...q,...r,...q,...s,...r);
+        }
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
+    group.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color:0xffd43b,
+      transparent:true, opacity:.65, depthWrite:false, side:THREE.DoubleSide})));
+    const wraps = ranges.length > 1 && ranges[0][0] === 0 && ranges.at(-1)[1] === 1;
+    for (const [start,end] of ranges) {
+      if (start===0 && end===1) continue;
+      for (const [t,entry] of [[start,true],[end,false]]) {
+        if (wraps && (t===0 || t===1)) continue; // not a real boundary at start/finish
+        const pos=at(t,1,3), color=entry ? 0xffd43b : 0x54dc90;
+        const post=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,4,6),new THREE.MeshBasicMaterial({color}));
+        post.position.set(pos[0],pos[1]+2,pos[2]); group.add(post);
+        const label=this.makeLabel(entry ? 'YELLOW' : 'END');
+        label.position.set(pos[0],pos[1]+5,pos[2]); label.scale.set(10,3.5,1);
+        label.material.color.setHex(color); group.add(label);
+      }
+    }
+  }
+
   update() {
     const s = this.state;
     const dt = Math.min(0.1, this.clock.getDelta());
     const now = performance.now();
+    this.updateCautions(now);
     if (!this.sponsors) return;
 
     // cars: interpolate between the last two telemetry ticks
