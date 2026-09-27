@@ -67,6 +67,17 @@ class LifecycleTests(unittest.TestCase):
         velocity = PIDPilot().command(drone, np.array([1000., 0., 0.]), .1)
         self.assertGreater(np.linalg.norm(velocity), 110.)
 
+    def test_deliberate_yellow_slowing_does_not_create_incidents(self):
+        self.car['car_id']=1
+        self.feat.update(speed_kmh=70.,speed_deficit_kmh=130.)
+        self.car['speed_kmh']=70.
+        for t in (20.,21.,22.,23.,24.): self.brain.tick(t,[self.car],{1})
+        self.assertFalse(self.brain.active)
+        self.feat.update(speed_kmh=0.)
+        self.car['speed_kmh']=0.
+        for t in (25.,25.1,25.2): self.brain.tick(t,[self.car],{1})
+        self.assertIn(1,self.brain.active)  # a real stop is still detected
+
     def test_slow_car_without_ml_alert_gets_one_persistent_escort(self):
         self.brain.anomaly.score_many = lambda feats: [(0., None) for _ in feats]
         self.feat.update(speed_kmh=50., speed_deficit_kmh=150.)

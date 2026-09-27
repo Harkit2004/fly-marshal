@@ -17,7 +17,7 @@ class CautionTests(unittest.TestCase):
     def test_live_only_fresh_and_clear(self):
         with TemporaryDirectory() as temp:
             feed=CautionFeed(); feed.path=Path(temp)/'flags.json'
-            brain=SimpleNamespace(active={0:dict(type='incident',track_pos=.5)},track=SimpleNamespace(length=1000))
+            brain=SimpleNamespace(active={0:dict(type='incident',track_pos=.5,car_ids=[0])},track=SimpleNamespace(length=1000))
             feed.publish(brain,'run','track',False,0)
             feed.publish(brain,'run','track',True,3)
             self.assertFalse(feed.path.exists())
@@ -33,6 +33,7 @@ class CautionTests(unittest.TestCase):
         except ImportError:
             self.skipTest('Optional Lua runtime not installed')
         lua=LuaRuntime()
+        lua.execute("package.path = 'ac_apps/marshal_drone_cams/?.lua;' .. package.path")
         lua.execute('''
           script={}; captured=0; stamp=100; pos=.5; pit=false; native=0; track='test/layout'
           flags={source='live', sent_at=100, track_id='test/layout',ranges={{.3,.55}}}

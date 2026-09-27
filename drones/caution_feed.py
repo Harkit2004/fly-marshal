@@ -1,5 +1,6 @@
-"""Short-lived, display-only caution zones for the CSP HUD app."""
+"""Short-lived caution zones for the CSP HUD and optional AI controller."""
 import math
+import json
 import time
 from pathlib import Path
 from drones.game_feeds import atomic_json
@@ -39,11 +40,25 @@ class CautionFeed:
 
     def publish(self, brain, session_id, track_id, live, age):
         # Never renew old warnings while telemetry is absent, or from a replay.
-        if not live or age >= 2 or not get('scene.yellow_hud_enabled', True):
+        if not live or age >= 2 or not (get('scene.yellow_hud_enabled', True) or get('scene.yellow_ai_enabled', False)):
             return
         now = time.monotonic()
         if now - self.last_write < .1:
             return
         self.last_write = now
         atomic_json(self.path, dict(source='live', session_id=session_id, track_id=track_id,
-                    sent_at=time.time(), ranges=caution_ranges(brain.active.values(), brain.track.length)))
+                    sent_at=time.time(), ranges=caution_ranges(brain.active.values(), brain.track.length),
+                    ai_enabled=bool(get('scene.yellow_ai_enabled', False)),
+                    hud_enabled=bool(get('scene.yellow_hud_enabled', True)),
+                    speed_kmh=get('scene.yellow_ai_speed_kmh', 80), approach_m=get('scene.yellow_ai_approach_m', 250),
+                    gap_m=get('scene.yellow_ai_gap_m', 20),
+                    incident_cars=[car for e in brain.active.values() if e['type']=='incident' for car in e['car_ids']] ))
+
+    def controlled_cars(self, session_id):
+        try:
+            status = json.loads(self.path.with_name('marshal_yellow_ai.json').read_text())
+            if status.get('session_id') == session_id and 0 <= time.time()-status['time'] < 2:
+                return {i for i in status['controlled'] if isinstance(i,int) and i>0}
+        except (OSError,ValueError,KeyError,TypeError):
+            pass
+        return set()

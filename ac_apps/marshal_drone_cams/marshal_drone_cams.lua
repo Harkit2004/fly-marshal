@@ -10,10 +10,12 @@ local lastError, saved, captureMs = '', 0, 0
 local mainId, cameraAge = nil, 0
 local cautionInbox = ac.getFolder(ac.FolderID.Root) .. '/logs/marshal_cautions.json'
 local cautionPacket, showCautions = nil, true
+local yellowAI = require('yellow_control')
+local aiClock = 0
 
 function script.drawCautionHUD()
   local p = cautionPacket
-  if not showCautions or not p or p.source ~= 'live' or type(p.sent_at) ~= 'number'
+  if not showCautions or not p or p.hud_enabled == false or p.source ~= 'live' or type(p.sent_at) ~= 'number'
       or math.abs(os.time() - p.sent_at) >= 2 or type(p.ranges) ~= 'table'
       or p.track_id ~= ac.getTrackFullID('/') then return end
   local car = ac.getCar(0)
@@ -116,6 +118,17 @@ local function renderOne(p, d)
 end
 
 function script.update(dt)
+  aiClock = aiClock + dt
+  if aiClock >= .1 then
+    local ok, ids = pcall(yellowAI.update, cautionPacket, aiClock)
+    if not ok then yellowAI.reset(); yellowAI.status = 'AI yellow control error; controls released' end
+    aiClock = 0
+    pcall(function()
+      io.save(ac.getFolder(ac.FolderID.Root) .. '/logs/marshal_yellow_ai.json', JSON.stringify({
+        session_id = cautionPacket and cautionPacket.session_id, time = os.time(), controlled = ok and ids or {},
+        status = yellowAI.status}), true)
+    end)
+  end
   poll, statsClock = poll + dt, statsClock + dt
   if poll >= 0.1 then
     poll = 0
@@ -181,6 +194,11 @@ end
 
 function script.windowMain(dt)
   ui.text('Marshal Drone Cams')
+  if ui.checkbox('Control AI in yellow zones (experimental)', yellowAI.enabled) then
+    yellowAI.enabled = not yellowAI.enabled
+    if not yellowAI.enabled then yellowAI.reset() end
+  end
+  ui.textWrapped(yellowAI.status)
   if ui.checkbox('Show Marshal yellow flags (display only)', showCautions) then showCautions = not showCautions end
   ui.text(fresh() and ('LIVE / ' .. packet.method) or 'Waiting for live brain poses')
   if ui.checkbox('Pause capture (baseline FPS measurement)', paused) then paused = not paused end
@@ -195,6 +213,7 @@ function script.windowMain(dt)
 end
 
 ac.onRelease(function()
+  yellowAI.reset()
   releaseCamera()
   for _, entry in pairs(shots) do entry.shot:dispose() end
 end)

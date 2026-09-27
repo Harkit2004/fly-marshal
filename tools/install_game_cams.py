@@ -18,7 +18,7 @@ def main():
     source = ROOT / "ac_apps" / "marshal_drone_cams"
     target = root / "apps" / "lua" / "marshal_drone_cams"
     target.mkdir(parents=True, exist_ok=True)
-    for name in ("manifest.ini", "marshal_drone_cams.lua"):
+    for name in ("manifest.ini", "marshal_drone_cams.lua", "yellow_control.lua"):
         src, dst = source / name, target / name
         if dst.exists() and dst.read_bytes() != src.read_bytes():
             shutil.copy2(dst, dst.with_suffix(dst.suffix + ".bak"))

@@ -96,7 +96,7 @@ class Brain:
         self.origins[ev.id] = (c["x"], c["z"])
         return ev.__dict__
 
-    def tick(self, t: float, cars: list[dict]) -> list[str]:
+    def tick(self, t: float, cars: list[dict], yellow_controlled=None) -> list[str]:
         msgs: list[str] = []
         dt = 0.05 if self.last_t is None else min(1.0, max(0.001, t - self.last_t))
         self.last_t = t
@@ -117,11 +117,20 @@ class Brain:
                 continue
             racing.append(car)
         scored = dict(zip(racing, self.anomaly.score_many([feats[c] for c in racing])))
+        intentional_slow = {car for car in (yellow_controlled or set()) if car in feats
+                            and feats[car]['speed_kmh'] > 5 and feats[car].get('wheels_out',0) < 3
+                            and feats[car].get('yaw_excess',abs(feats[car]['yaw_rate'])) < .7
+                            and feats[car]['accel'] > -5}
+        for car in intentional_slow & scored.keys():
+            if scored[car][1] in (None, 'stopped', 'limp'):
+                scored[car] = (0., None)
         for car in racing:
             self.hot[car] = self.hot.get(car, 0) + 1 if scored[car][0] > ANOMALY_ON else 0
         quiet = [c for c in racing if c not in self.active or self.active[c]["type"] == "predicted"]
         preds = dict(zip(quiet, self.risk.predict_many(
             [feats[c] for c in quiet], [scored[c][0] if self.hot[c] >= 3 else 0.0 for c in quiet])))
+        for car in intentional_slow:
+            preds.pop(car, None)
 
         for car in racing:
             f, c = feats[car], byid[car]
@@ -129,7 +138,7 @@ class Brain:
             act = self.active.get(car)
             # Slow running is a separate telemetry hazard: the crash classifier
             # need not label a steadily limping car as a crash.
-            moving_slow = (float(get("detection.slow_min_kmh", 5)) < f["speed_kmh"]
+            moving_slow = (car not in intentional_slow and float(get("detection.slow_min_kmh", 5)) < f["speed_kmh"]
                            < float(get("detection.slow_max_kmh", 100))
                            and f["speed_deficit_kmh"] > float(get("detection.slow_deficit_kmh", 60))
                            and f["accel"] > -1 and f.get("wheels_out", 0) < 3)
@@ -296,7 +305,8 @@ async def main():
                             cars, last_telemetry = m["cars"], time.monotonic()
                             if source_live and not feeds.live:
                                 feeds.reset(True)
-                            for out in await asyncio.to_thread(brain.tick, m["t"], m["cars"]):
+                            controlled = cautions.controlled_cars(session_id) if source_live else set()
+                            for out in await asyncio.to_thread(brain.tick, m["t"], m["cars"], controlled):
                                 if '"risk' in out[:20] or '"report' in out[:20]:
                                     print(out[:160])
                                 emit(out)

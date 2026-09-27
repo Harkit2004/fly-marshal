@@ -279,7 +279,7 @@ These checks require no API key and do not establish GPU performance or live ren
 
 ## Coordinates
 
-### Yellow caution zones (display only)
+### Yellow caution zones and experimental AI control
 
 Active incidents, including slow-car escorts, colour the 2D track and minimap yellow from
 200 m before to 50 m after their current track position. Predictions alone do not declare
@@ -287,7 +287,7 @@ a yellow zone. Overlaps merge and the start/finish boundary wraps; zones disappe
 their incidents end. This is a demo visualization, not an official marshal-sector system.
 Configure `scene.yellow_before_m` and `scene.yellow_after_m`, or set
 `scene.yellow_zones_enabled = false` to disable it; restart the bridge and refresh the page.
-No AI controls or native game flags are changed by this feature.
+Native game flag state is unchanged. Optional AI control is described below.
 
 The 3D view now adds translucent yellow roadside ribbons and YELLOW/END markers using the
 same merged zones. Geometry is refreshed at most 5 times/second, and removed resources are
@@ -298,12 +298,33 @@ uses `ui.drawRaceFlag(ac.FlagType.Caution)` to display yellow in the normal in-g
 position when player car 0 enters a zone. It runs with its window closed and with camera
 capture paused or disabled. Existing native flags take precedence. It draws no flag in
 pits, outside a zone, on another track, or when the feed expires. The brain publishes this
-file only for fresh live telemetry, never replay. No native flag state or AI is modified.
+file only for fresh live telemetry, never replay. The HUD itself only draws the flag.
 Disable with `scene.yellow_hud_enabled = false` (restart brain) or uncheck "Show Marshal
 yellow flags" in the Lua app. Restart AC after installing the updated app and restart the
 launcher after upgrading the brain. Real in-game rendering remains an acceptance check;
 Lua behaviour is tested with mocked CSP functions. The 3D rendering/removal was visually
 verified using a labelled test track.
+
+The **Marshal Drone Cams** app now also offers experimental local-race AI slowing.
+`scene.yellow_ai_enabled = true` enables an 80 km/h cap inside zones, a 250 m braking
+approach, reduced aggression and a following-distance speed cap. Configure
+`yellow_ai_speed_kmh`, `yellow_ai_approach_m` and `yellow_ai_gap_m` in `settings.toml`.
+The player, pit cars and cars belonging to the incident are excluded. Moving cars
+deliberately slowed by this controller do not generate ordinary slow-car alerts;
+unexpected stops, hard deceleration and other crash evidence remain detectable.
+
+This uses CSP `physics.setAITopSpeed` and `physics.setAIAggression`, gated by
+`physics.allowed()`. The app shows a status message if physics access is unavailable.
+It does not provide guaranteed no-overtaking rules or penalties: following control
+discourages passing, but side-by-side entries, queues and blocked roads still need live
+testing. Online races and replays are excluded. Tests use mocked CSP APIs; actual
+AI response in AC remains unverified.
+
+On exit, stale feed, disable or app shutdown, saved aggression is restored and our speed
+limit is removed. CSP exposes no previous-speed-limit getter, so do not combine this
+with another AI speed limiter. To revert AI behaviour immediately, uncheck **Control AI
+in yellow zones (experimental)** in the app. To keep it disabled across restarts, set
+`scene.yellow_ai_enabled = false` and restart the launcher. The visual zones remain usable.
 
 Live response now uses one drone per car, including retries and warning-to-incident upgrades.
 Warning scores are rechecked while active; alert coordinates and drone targets follow current telemetry.
